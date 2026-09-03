@@ -1,28 +1,168 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <title>PS034 Legal Metrology Compliance Checker</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Legal Metrology Compliance Checker</title>
+
     <link rel="stylesheet" href="style.css">
 </head>
 
-</head>
-
 <body>
-    <div class="container">
 
-    <h1>Legal Metrology Compliance Checker</h1>
+    <!-- Header -->
+    <header class="header">
+        <div class="brand">
+            <div class="logo">LM</div>
 
-    <p>
-        Upload a packaged product image to check its label.
-    </p>
+            <div>
+                <h2>Legal Metrology</h2>
+                <span>Compliance Checker</span>
+            </div>
+        </div>
 
-    <input type="file" accept="image/*">
+        <div class="badge">
+            SIH 2026 • PS034
+        </div>
+    </header>
 
-    <br><br>
 
-    <button onclick="analyzeProduct()">
-    Analyze Product
-    </button>
+    <!-- Main Content -->
+    <main class="main">
+
+        <section class="hero">
+
+            <div class="hero-text">
+
+                <p class="tag">AI-ASSISTED COMPLIANCE SCREENING</p>
+
+                <h1>
+                    Check packaged products
+                    <span>smarter.</span>
+                </h1>
+
+                <p class="description">
+                    Upload a product label and analyze important
+                    declarations using OCR and automated rule checking.
+                </p>
+
+            </div>
+
+
+            <!-- Upload Card -->
+            <div class="upload-card">
+
+                <div class="upload-icon">
+                    📦
+                </div>
+
+                <h2>Scan Product Label</h2>
+
+                <p>
+                    Upload a clear image of the front or back
+                    label of a packaged commodity.
+                </p>
+
+                <label class="upload-button">
+
+                    📷 Choose Product Image
+
+                    <input
+                        type="file"
+                        id="productImage"
+                        accept="image/*"
+                        hidden
+                    >
+
+                </label>
+
+                <div id="imagePreview"></div>
+
+                <button
+                    class="analyze-button"
+                    onclick="analyzeProduct()"
+                >
+                    🔍 Analyze Product
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- Analysis Result -->
+        <section class="result-section" id="resultSection">
+
+            <h2>Compliance Analysis</h2>
+
+            <p class="result-subtitle">
+                Analysis results will appear here.
+            </p>
+
+
+            <div class="result-grid">
+
+                <div class="result-card">
+                    <span>Product Name</span>
+                    <strong id="productName">—</strong>
+                </div>
+
+                <div class="result-card">
+                    <span>Net Quantity</span>
+                    <strong id="netQuantity">—</strong>
+                </div>
+
+                <div class="result-card">
+                    <span>MRP</span>
+                    <strong id="mrp">—</strong>
+                </div>
+
+                <div class="result-card">
+                    <span>Manufacturer</span>
+                    <strong id="manufacturer">—</strong>
+                </div>
+
+            </div>
+
+
+            <div class="compliance-result">
+
+                <div class="status-icon">
+                    ⚠️
+                </div>
+
+                <div>
+                    <h3 id="complianceStatus">
+                        Waiting for analysis
+                    </h3>
+
+                    <p id="complianceMessage">
+                        Upload a product image and click
+                        "Analyze Product".
+                    </p>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- Footer -->
+    <footer>
+
+        <p>
+            AI-assisted decision support system • SIH 2026 PS034
+        </p>
+
+    </footer>
+
+
     <script src="script.js"></script>
+
 </body>
+
 </html>
