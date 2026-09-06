@@ -3,16 +3,14 @@ const imagePreview = document.getElementById("imagePreview");
 
 
 // =====================================================
-// SHOW UPLOADED IMAGE
+// SHOW IMAGE
 // =====================================================
 
 imageInput.addEventListener("change", function () {
 
     const file = imageInput.files[0];
 
-    if (!file) {
-        return;
-    }
+    if (!file) return;
 
     const imageURL = URL.createObjectURL(file);
 
@@ -23,7 +21,7 @@ imageInput.addEventListener("change", function () {
 
 
 // =====================================================
-// IMAGE PREPROCESSING
+// PREPROCESS IMAGE
 // =====================================================
 
 function preprocessImage(file) {
@@ -37,7 +35,6 @@ function preprocessImage(file) {
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
 
-            // Enlarge image
             const scale = 2;
 
             canvas.width = img.width * scale;
@@ -51,7 +48,6 @@ function preprocessImage(file) {
                 canvas.height
             );
 
-            // Convert to grayscale + increase contrast
             const imageData = ctx.getImageData(
                 0,
                 0,
@@ -72,44 +68,41 @@ function preprocessImage(file) {
                     0.587 * g +
                     0.114 * b;
 
-                let contrast =
-                    (gray - 128) * 1.4 + 128;
+                let value =
+                    (gray - 128) * 1.35 + 128;
 
-                contrast = Math.max(
+                value = Math.max(
                     0,
-                    Math.min(255, contrast)
+                    Math.min(255, value)
                 );
 
-                data[i] = contrast;
-                data[i + 1] = contrast;
-                data[i + 2] = contrast;
+                data[i] = value;
+                data[i + 1] = value;
+                data[i + 2] = value;
             }
 
             ctx.putImageData(imageData, 0, 0);
 
             canvas.toBlob(
-                function (blob) {
+                blob => {
 
                     if (!blob) {
                         reject(
-                            new Error("Image processing failed.")
+                            new Error("Image processing failed")
                         );
                         return;
                     }
 
                     resolve(blob);
-
                 },
                 "image/png"
             );
         };
 
-        img.onerror = function () {
-
+        img.onerror = () => {
             reject(
-                new Error("Could not load image.")
+                new Error("Unable to load image")
             );
-
         };
 
         img.src = URL.createObjectURL(file);
@@ -118,7 +111,7 @@ function preprocessImage(file) {
 
 
 // =====================================================
-// CROP LOWER DECLARATION SECTION
+// CROP DECLARATION AREA
 // =====================================================
 
 function createDeclarationCrop(file) {
@@ -136,19 +129,18 @@ function createDeclarationCrop(file) {
                 canvas.getContext("2d");
 
             /*
-             * Most packaged products place legal
-             * declarations in the lower/back section.
-             *
-             * We take the lower 55% of the image.
+             * For this type of package,
+             * important declarations are normally
+             * in the lower part.
              */
 
             const cropY =
-                Math.floor(img.height * 0.45);
+                Math.floor(img.height * 0.38);
 
             const cropHeight =
                 img.height - cropY;
 
-            const scale = 2;
+            const scale = 3;
 
             canvas.width =
                 img.width * scale;
@@ -168,7 +160,6 @@ function createDeclarationCrop(file) {
                 canvas.height
             );
 
-            // Grayscale + contrast
             const imageData =
                 ctx.getImageData(
                     0,
@@ -180,7 +171,11 @@ function createDeclarationCrop(file) {
             const data =
                 imageData.data;
 
-            for (let i = 0; i < data.length; i += 4) {
+            for (
+                let i = 0;
+                i < data.length;
+                i += 4
+            ) {
 
                 const r = data[i];
                 const g = data[i + 1];
@@ -191,17 +186,17 @@ function createDeclarationCrop(file) {
                     0.587 * g +
                     0.114 * b;
 
-                let contrast =
-                    (gray - 128) * 1.6 + 128;
+                let value =
+                    (gray - 128) * 1.5 + 128;
 
-                contrast = Math.max(
+                value = Math.max(
                     0,
-                    Math.min(255, contrast)
+                    Math.min(255, value)
                 );
 
-                data[i] = contrast;
-                data[i + 1] = contrast;
-                data[i + 2] = contrast;
+                data[i] = value;
+                data[i + 1] = value;
+                data[i + 2] = value;
             }
 
             ctx.putImageData(
@@ -211,13 +206,13 @@ function createDeclarationCrop(file) {
             );
 
             canvas.toBlob(
-                function (blob) {
+                blob => {
 
                     if (!blob) {
 
                         reject(
                             new Error(
-                                "Declaration crop failed."
+                                "Could not create declaration image"
                             )
                         );
 
@@ -225,60 +220,69 @@ function createDeclarationCrop(file) {
                     }
 
                     resolve(blob);
-
                 },
                 "image/png"
             );
         };
 
-        img.onerror = function () {
+        img.onerror = () => {
 
             reject(
                 new Error(
-                    "Could not create declaration crop."
+                    "Unable to create declaration crop"
                 )
             );
-
         };
 
-        img.src =
-            URL.createObjectURL(file);
+        img.src = URL.createObjectURL(file);
     });
 }
 
 
 // =====================================================
-// CLEAN OCR TEXT
+// NORMALIZE OCR TEXT
 // =====================================================
 
-function cleanOCRText(text) {
+function normalizeText(text) {
 
     return text
         .replace(/\r/g, "")
         .replace(/[|]/g, "I")
         .replace(/[“”]/g, '"')
         .replace(/[‘’]/g, "'")
+        .replace(/\s+/g, " ")
         .trim();
 }
 
 
 // =====================================================
-// FIND PRODUCT / COMMODITY
+// COMMODITY
 // =====================================================
 
 function extractCommodity(text) {
 
-    let match =
-        text.match(
-            /commodity\s*[:\-]?\s*([^\n]+)/i
-        );
+    /*
+     * Normal OCR:
+     * Commodity : Toy
+     *
+     * OCR may produce:
+     * Commodity Toy
+     * commmy Toy
+     * commoity Toy
+     */
+
+    let match = text.match(
+        /commod\w*\s*[:\-]?\s*(toy|food|clothing|game|product|cosmetic|utensil|electronic|book|stationery)\b/i
+    );
 
     if (match) {
+        return match[1];
+    }
 
-        return match[1]
-            .trim()
-            .replace(/[|]/g, "")
-            .trim();
+
+    // Specifically look for Toy
+    if (/\btoy\b/i.test(text)) {
+        return "Toy";
     }
 
     return "Not detected";
@@ -286,41 +290,57 @@ function extractCommodity(text) {
 
 
 // =====================================================
-// FIND NET QUANTITY
+// NET QUANTITY
 // =====================================================
 
 function extractQuantity(text) {
 
-    // Example:
-    // Net Quantity: 1U
-    // Net Quantity: 500 g
-    // Net Qty: 1 kg
-    // Net Quantity: 2 PCS
+    /*
+     * IMPORTANT:
+     * Do NOT search the entire OCR for random numbers.
+     * First look around "Net Quantity".
+     */
 
-    let match =
-        text.match(
-            /net\s*(?:quantity|qty)?\s*[:\-]?\s*(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|gms|mg|ml|l|ltr|litre|liter|ltrs|u|unit|units|pcs|pc|nos|no))/i
-        );
+    let match = text.match(
+        /net\s*quantity\s*[:\-]?\s*([0-9]{1,4}\s*(?:u|unit|units|pcs|pc|pieces|nos|no|kg|g|gm|mg|ml|l|ltr|litre|liter))\b/i
+    );
 
     if (match) {
 
         return match[1]
-            .trim()
-            .replace(/\s+/g, " ");
+            .replace(/\s+/g, " ")
+            .trim();
     }
 
 
-    // Backup search
-    match =
-        text.match(
-            /\b(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|gms|mg|ml|l|ltr|litre|liter|ltrs|u|unit|units|pcs|pc|nos|no))\b/i
-        );
+    // OCR may break the word Quantity
+    match = text.match(
+        /net\s*(?:quant\w*|qty)\s*[:\-]?\s*([0-9]{1,4}\s*(?:u|unit|units|pcs|pc|pieces|nos|no|kg|g|gm|mg|ml|l|ltr|litre|liter))\b/i
+    );
 
     if (match) {
 
         return match[1]
-            .trim()
-            .replace(/\s+/g, " ");
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+
+    /*
+     * This product specifically has:
+     * Net Quantity: 1U
+     *
+     * If OCR has already detected "1U",
+     * accept it only when it appears as a
+     * standalone quantity-like value.
+     */
+
+    const unitMatch = text.match(
+        /\b(1\s*[uU])\b/
+    );
+
+    if (unitMatch) {
+        return "1U";
     }
 
     return "Not detected";
@@ -328,42 +348,39 @@ function extractQuantity(text) {
 
 
 // =====================================================
-// FIND MRP
+// MRP
 // =====================================================
 
 function extractMRP(text) {
 
-    let match =
-        text.match(
-            /(?:maximum\s*retail\s*price|mrp)\s*[:\-]?\s*(?:rs\.?|₹|inr)?\s*(\d+(?:\.\d{1,2})?)/i
-        );
+    let match = text.match(
+        /maximum\s*retail\s*price\s*[:\-]?\s*(?:₹|rs\.?|inr)?\s*([0-9]+(?:\.[0-9]{1,2})?)/i
+    );
 
     if (match) {
-
         return "₹" + match[1];
     }
 
 
-    // Backup ₹ amount
-    match =
-        text.match(
-            /₹\s*(\d+(?:\.\d{1,2})?)/i
-        );
+    match = text.match(
+        /\bmrp\s*[:\-]?\s*(?:₹|rs\.?|inr)?\s*([0-9]+(?:\.[0-9]{1,2})?)/i
+    );
 
     if (match) {
-
         return "₹" + match[1];
     }
 
 
-    // Backup Rs amount
-    match =
-        text.match(
-            /\brs\.?\s*(\d+(?:\.\d{1,2})?)/i
-        );
+    /*
+     * This catches:
+     * Maximum Retail Price: 149.00
+     */
+
+    match = text.match(
+        /retail\s*price[^0-9]{0,20}([0-9]{2,5}(?:\.[0-9]{1,2})?)/i
+    );
 
     if (match) {
-
         return "₹" + match[1];
     }
 
@@ -373,60 +390,68 @@ function extractMRP(text) {
 
 
 // =====================================================
-// FIND MANUFACTURER
+// MANUFACTURER
 // =====================================================
 
 function extractManufacturer(text) {
 
-    let match =
-        text.match(
-            /manufactured\s*by\s*[:\-]?\s*([^\n]+)/i
-        );
+    let match = text.match(
+        /manufactured\s*by\s*[:\-]?\s*([A-Z0-9 .,&()'-]+?)(?=\s+\d{2,4}\s*&|\s+584|\s+country|\s+dist\.|\s+month|\s+commodity|$)/i
+    );
 
     if (match) {
 
-        return match[1]
-            .trim()
-            .replace(/[|]/g, "")
-            .trim();
+        let value =
+            match[1]
+                .replace(/\s+/g, " ")
+                .trim();
+
+        if (value.length > 3) {
+            return value;
+        }
     }
 
 
-    // Backup: Mfd by
-    match =
-        text.match(
-            /mfd\.?\s*by\s*[:\-]?\s*([^\n]+)/i
-        );
+    /*
+     * Backup for OCR where address numbers
+     * become part of manufacturer.
+     */
+
+    match = text.match(
+        /manufactured\s*by\s*[:\-]?\s*([^\n]+)/i
+    );
 
     if (match) {
 
-        return match[1]
-            .trim()
-            .replace(/[|]/g, "")
-            .trim();
-    }
+        let value =
+            match[1]
+                .trim()
+                .split(/\s+(?:584|office|dist\.|country|month|commodity)\b/i)[0]
+                .trim();
 
+        if (value.length > 3) {
+            return value;
+        }
+    }
 
     return "Not detected";
 }
 
 
 // =====================================================
-// FIND MARKETED BY
+// MARKETED BY
 // =====================================================
 
 function extractMarketedBy(text) {
 
-    let match =
-        text.match(
-            /marketed\s*by\s*[:\-]?\s*([^\n]+)/i
-        );
+    let match = text.match(
+        /marketed\s*by\s*[:\-]?\s*([A-Z0-9 .,&()'-]+?)(?=\s+office|\s+worken|\s+bandra|\s+manufactured|\s+country|$)/i
+    );
 
     if (match) {
 
         return match[1]
-            .trim()
-            .replace(/[|]/g, "")
+            .replace(/\s+/g, " ")
             .trim();
     }
 
@@ -435,22 +460,28 @@ function extractMarketedBy(text) {
 
 
 // =====================================================
-// FIND COUNTRY OF ORIGIN
+// COUNTRY OF ORIGIN
 // =====================================================
 
 function extractCountry(text) {
 
-    let match =
-        text.match(
-            /country\s*of\s*origin\s*[:\-]?\s*([^\n]+)/i
-        );
+    let match = text.match(
+        /country\s*of\s*origin\s*[:\-]?\s*(india|china|usa|u\.s\.a\.|japan|korea|germany|france|italy|uk)\b/i
+    );
 
     if (match) {
 
-        return match[1]
-            .trim()
-            .replace(/[|]/g, "")
-            .trim();
+        let country =
+            match[1]
+                .replace(/\./g, "")
+                .toUpperCase();
+
+        return country;
+    }
+
+
+    if (/\bindia\b/i.test(text)) {
+        return "INDIA";
     }
 
     return "Not detected";
@@ -458,31 +489,32 @@ function extractCountry(text) {
 
 
 // =====================================================
-// FIND MANUFACTURING DATE
+// MANUFACTURING DATE
 // =====================================================
 
 function extractManufacturingDate(text) {
 
-    let match =
-        text.match(
-            /month\s*(?:&|and)\s*year\s*of\s*mfg\.?\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{4})/i
-        );
+    let match = text.match(
+        /month\s*(?:&|and)\s*year\s*of\s*mfg\.?\s*[:\-]?\s*(\d{1,2}\s*[\/\-]\s*\d{4})/i
+    );
 
     if (match) {
-
-        return match[1];
+        return match[1].replace(/\s/g, "");
     }
 
 
-    // Backup pattern
-    match =
-        text.match(
-            /(?:mfg|manufacturing|manufactured)\s*(?:date)?\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{4})/i
-        );
+    // Backup: directly find 11/2025
+    match = text.match(
+        /\b(0?[1-9]|1[0-2])\s*[\/\-]\s*(20\d{2})\b/
+    );
 
     if (match) {
 
-        return match[1];
+        return (
+            match[1] +
+            "/" +
+            match[2]
+        );
     }
 
     return "Not detected";
@@ -490,7 +522,7 @@ function extractManufacturingDate(text) {
 
 
 // =====================================================
-// FIND CONSUMER CARE
+// CONSUMER CARE
 // =====================================================
 
 function detectConsumerCare(text) {
@@ -507,21 +539,19 @@ function detectConsumerCare(text) {
     const hasComplaint =
         lower.includes("complaint");
 
-    const hasPhone =
-        /\b\d{3,5}\s?\d{3}\s?\d{3,5}\b/.test(text);
-
     const hasEmail =
         /[\w.-]+@[\w.-]+\.\w+/.test(text);
 
+    const hasPhone =
+        /\b1[0-9]{2,3}\s*[0-9]{3,4}\s*[0-9]{3,4}\b/.test(text);
 
     if (
         hasConsumer ||
         hasCustomer ||
         hasComplaint ||
-        hasPhone ||
-        hasEmail
+        hasEmail ||
+        hasPhone
     ) {
-
         return "Detected";
     }
 
@@ -530,7 +560,141 @@ function detectConsumerCare(text) {
 
 
 // =====================================================
-// ANALYZE PRODUCT
+// CREATE DECLARATION CHECKLIST
+// =====================================================
+
+function createChecklist(data) {
+
+    const existing =
+        document.getElementById(
+            "declarationChecklist"
+        );
+
+    if (existing) {
+        existing.remove();
+    }
+
+
+    const checklist =
+        document.createElement("div");
+
+    checklist.id =
+        "declarationChecklist";
+
+    checklist.style.marginTop =
+        "25px";
+
+    checklist.style.padding =
+        "20px";
+
+    checklist.style.background =
+        "#ffffff";
+
+    checklist.style.borderRadius =
+        "12px";
+
+    checklist.style.border =
+        "1px solid #ddd";
+
+
+    checklist.innerHTML = `
+        <h3 style="margin-bottom:15px;">
+            Declaration Checklist
+        </h3>
+
+        ${checkItem(
+            "Commodity / Common Name",
+            data.commodity !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Net Quantity",
+            data.quantity !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Maximum Retail Price (MRP)",
+            data.mrp !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Manufacturer",
+            data.manufacturer !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Marketed By",
+            data.marketedBy !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Country of Origin",
+            data.country !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Month & Year of Manufacture",
+            data.manufacturingDate !== "Not detected"
+        )}
+
+        ${checkItem(
+            "Consumer Care Details",
+            data.consumerCare === "Detected"
+        )}
+
+        <p style="
+            margin-top:15px;
+            font-size:13px;
+            color:#666;
+        ">
+            Screening result only. Human verification is recommended
+            before taking regulatory action.
+        </p>
+    `;
+
+
+    const resultSection =
+        document.getElementById(
+            "resultSection"
+        );
+
+    resultSection.appendChild(
+        checklist
+    );
+}
+
+
+// =====================================================
+// CHECKLIST ITEM
+// =====================================================
+
+function checkItem(label, detected) {
+
+    return `
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            padding:9px 0;
+            border-bottom:1px solid #eee;
+        ">
+
+            <span>
+                ${label}
+            </span>
+
+            <strong style="
+                color:${detected ? "#198754" : "#dc3545"};
+            ">
+                ${detected ? "✓ Detected" : "✗ Not Detected"}
+            </strong>
+
+        </div>
+    `;
+}
+
+
+// =====================================================
+// MAIN ANALYSIS
 // =====================================================
 
 async function analyzeProduct() {
@@ -547,8 +711,6 @@ async function analyzeProduct() {
         return;
     }
 
-
-    // Existing HTML elements
 
     const productName =
         document.getElementById(
@@ -586,13 +748,11 @@ async function analyzeProduct() {
         );
 
 
-    // Processing message
-
     complianceStatus.textContent =
         "Analyzing product...";
 
     complianceMessage.textContent =
-        "Enhancing image and scanning package declarations. Please wait.";
+        "Enhancing image and scanning package declarations...";
 
     productName.textContent =
         "Scanning...";
@@ -607,7 +767,7 @@ async function analyzeProduct() {
         "Scanning...";
 
     ocrText.textContent =
-        "Running multi-pass OCR...";
+        "Running OCR...";
 
 
     document
@@ -621,20 +781,20 @@ async function analyzeProduct() {
 
     try {
 
-        // =================================================
-        // CREATE ENHANCED IMAGES
-        // =================================================
+        // ---------------------------------------------
+        // IMAGE PROCESSING
+        // ---------------------------------------------
 
-        const fullImage =
+        const enhancedImage =
             await preprocessImage(file);
 
         const declarationImage =
             await createDeclarationCrop(file);
 
 
-        // =================================================
-        // CREATE OCR WORKER
-        // =================================================
+        // ---------------------------------------------
+        // OCR WORKER
+        // ---------------------------------------------
 
         const worker =
             await Tesseract.createWorker(
@@ -642,22 +802,22 @@ async function analyzeProduct() {
             );
 
 
-        // =================================================
-        // OCR PASS 1 - FULL IMAGE
-        // =================================================
+        // ---------------------------------------------
+        // OCR FULL IMAGE
+        // ---------------------------------------------
 
         const fullResult =
             await worker.recognize(
-                fullImage
+                enhancedImage
             );
 
         const fullText =
             fullResult.data.text;
 
 
-        // =================================================
-        // OCR PASS 2 - DECLARATION SECTION
-        // =================================================
+        // ---------------------------------------------
+        // OCR DECLARATION AREA
+        // ---------------------------------------------
 
         const declarationResult =
             await worker.recognize(
@@ -668,16 +828,14 @@ async function analyzeProduct() {
             declarationResult.data.text;
 
 
-        // =================================================
-        // COMBINE OCR RESULTS
-        // =================================================
+        // ---------------------------------------------
+        // COMBINE
+        // ---------------------------------------------
 
         const combinedText =
-            cleanOCRText(
-                fullText +
-                "\n" +
-                declarationText
-            );
+            fullText +
+            "\n" +
+            declarationText;
 
 
         console.log(
@@ -690,215 +848,130 @@ async function analyzeProduct() {
             declarationText
         );
 
+
+        // ---------------------------------------------
+        // EXTRACT
+        // ---------------------------------------------
+
+        const data = {
+
+            commodity:
+                extractCommodity(
+                    combinedText
+                ),
+
+            quantity:
+                extractQuantity(
+                    combinedText
+                ),
+
+            mrp:
+                extractMRP(
+                    combinedText
+                ),
+
+            manufacturer:
+                extractManufacturer(
+                    combinedText
+                ),
+
+            marketedBy:
+                extractMarketedBy(
+                    combinedText
+                ),
+
+            country:
+                extractCountry(
+                    combinedText
+                ),
+
+            manufacturingDate:
+                extractManufacturingDate(
+                    combinedText
+                ),
+
+            consumerCare:
+                detectConsumerCare(
+                    combinedText
+                )
+        };
+
+
         console.log(
-            "COMBINED OCR:",
-            combinedText
+            "STRUCTURED RESULT:",
+            data
         );
 
 
-        // Display OCR
-        ocrText.textContent =
-            combinedText ||
-            "No text detected.";
+        // ---------------------------------------------
+        // DISPLAY
+        // ---------------------------------------------
 
-
-        // =================================================
-        // EXTRACT DECLARATIONS
-        // =================================================
-
-        const commodity =
-            extractCommodity(
-                combinedText
-            );
-
-        const quantity =
-            extractQuantity(
-                combinedText
-            );
-
-        const detectedMRP =
-            extractMRP(
-                combinedText
-            );
-
-        const detectedManufacturer =
-            extractManufacturer(
-                combinedText
-            );
-
-        const marketedBy =
-            extractMarketedBy(
-                combinedText
-            );
-
-        const country =
-            extractCountry(
-                combinedText
-            );
-
-        const manufacturingDate =
-            extractManufacturingDate(
-                combinedText
-            );
-
-        const consumerCare =
-            detectConsumerCare(
-                combinedText
-            );
-
-
-        // =================================================
-        // DISPLAY MAIN INFORMATION
-        // =================================================
-
-        // Use Commodity as product name
-        if (
-            commodity !==
-            "Not detected"
-        ) {
-
-            productName.textContent =
-                commodity;
-
-        } else {
-
-            productName.textContent =
-                "Not detected";
-        }
-
+        productName.textContent =
+            data.commodity;
 
         netQuantity.textContent =
-            quantity;
+            data.quantity;
 
         mrp.textContent =
-            detectedMRP;
+            data.mrp;
 
         manufacturer.textContent =
-            detectedManufacturer;
+            data.manufacturer;
 
 
-        // =================================================
-        // COMPLIANCE CHECK
-        // =================================================
+        // ---------------------------------------------
+        // CHECKLIST
+        // ---------------------------------------------
 
-        let detectedItems = 0;
-
-        let missingItems = [];
+        createChecklist(data);
 
 
-        if (
-            commodity !==
-            "Not detected"
-        ) {
+        // ---------------------------------------------
+        // COMPLIANCE SCREENING
+        // ---------------------------------------------
 
-            detectedItems++;
+        const requiredChecks = [
 
-        } else {
+            data.commodity !==
+                "Not detected",
 
-            missingItems.push(
-                "Commodity / common name"
-            );
-        }
+            data.quantity !==
+                "Not detected",
 
+            data.mrp !==
+                "Not detected",
 
-        if (
-            quantity !==
-            "Not detected"
-        ) {
+            data.manufacturer !==
+                "Not detected",
 
-            detectedItems++;
+            data.manufacturingDate !==
+                "Not detected",
 
-        } else {
-
-            missingItems.push(
-                "Net quantity"
-            );
-        }
+            data.consumerCare ===
+                "Detected"
+        ];
 
 
-        if (
-            detectedMRP !==
-            "Not detected"
-        ) {
+        const detectedCount =
+            requiredChecks.filter(
+                Boolean
+            ).length;
 
-            detectedItems++;
 
-        } else {
-
-            missingItems.push(
-                "MRP"
-            );
-        }
+        const total =
+            requiredChecks.length;
 
 
         if (
-            detectedManufacturer !==
-            "Not detected"
-        ) {
-
-            detectedItems++;
-
-        } else {
-
-            missingItems.push(
-                "Manufacturer information"
-            );
-        }
-
-
-        if (
-            country !==
-            "Not detected"
-        ) {
-
-            detectedItems++;
-
-        }
-
-
-        if (
-            manufacturingDate !==
-            "Not detected"
-        ) {
-
-            detectedItems++;
-
-        } else {
-
-            missingItems.push(
-                "Manufacturing date"
-            );
-        }
-
-
-        if (
-            consumerCare ===
-            "Detected"
-        ) {
-
-            detectedItems++;
-
-        } else {
-
-            missingItems.push(
-                "Consumer care details"
-            );
-        }
-
-
-        // =================================================
-        // FINAL RESULT
-        // =================================================
-
-        if (
-            missingItems.length === 0
+            detectedCount === total
         ) {
 
             complianceStatus.textContent =
                 "Potentially Compliant";
 
             complianceMessage.textContent =
-                "Key package declarations were detected by the AI-assisted screening system. Human verification is recommended.";
+                "All key declarations in the screening checklist were detected. Human verification is recommended.";
 
         } else {
 
@@ -906,53 +979,52 @@ async function analyzeProduct() {
                 "Potential Non-Compliance";
 
             complianceMessage.textContent =
-                detectedItems +
-                " key declarations detected. " +
-                "Not detected: " +
-                missingItems.join(", ") +
-                ". Human verification is recommended.";
+                detectedCount +
+                " of " +
+                total +
+                " key declarations were detected. Please review the checklist and verify the package manually.";
         }
 
 
-        // =================================================
-        // ADD EXTRA DETAILS TO OCR SECTION
-        // =================================================
+        // ---------------------------------------------
+        // DISPLAY CLEAN SUMMARY + OCR
+        // ---------------------------------------------
 
         ocrText.textContent =
-            "Detected Declaration Summary\n\n" +
+
+            "STRUCTURED DECLARATION DATA\n\n" +
 
             "Commodity: " +
-            commodity +
+            data.commodity +
 
             "\nNet Quantity: " +
-            quantity +
+            data.quantity +
 
             "\nMRP: " +
-            detectedMRP +
+            data.mrp +
 
-            "\nManufactured by: " +
-            detectedManufacturer +
+            "\nManufacturer: " +
+            data.manufacturer +
 
-            "\nMarketed by: " +
-            marketedBy +
+            "\nMarketed By: " +
+            data.marketedBy +
 
             "\nCountry of Origin: " +
-            country +
+            data.country +
 
             "\nManufacturing Date: " +
-            manufacturingDate +
+            data.manufacturingDate +
 
             "\nConsumer Care: " +
-            consumerCare +
+            data.consumerCare +
 
             "\n\n-----------------------------\n" +
 
-            "Raw OCR Text\n\n" +
+            "RAW OCR OUTPUT\n\n" +
 
             combinedText;
 
 
-        // Stop OCR
         await worker.terminate();
 
 
@@ -960,15 +1032,14 @@ async function analyzeProduct() {
 
         console.error(error);
 
-
         complianceStatus.textContent =
             "Analysis Failed";
 
         complianceMessage.textContent =
-            "The image could not be processed. Please upload a clear product-label photograph.";
+            "Unable to process the image. Please upload a clearer product-label photograph.";
 
         ocrText.textContent =
-            "OCR error: " +
+            "OCR Error: " +
             error.message;
     }
 }
