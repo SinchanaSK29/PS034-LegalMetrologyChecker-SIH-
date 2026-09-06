@@ -125,7 +125,18 @@
                 </div>
 
             </div>
+            <!-- OCR Output -->
+<div class="ocr-result">
 
+    <h3>Extracted Text</h3>
+
+    <p>
+        Text detected from the product label using OCR.
+    </p>
+
+    <pre id="ocrText">No text extracted yet.</pre>
+
+</div>
 
             <div class="compliance-result">
 
@@ -161,7 +172,11 @@
     </footer>
 
 
-    <script src="script.js"></script>
+    <!-- Tesseract.js OCR Library -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<!-- Our JavaScript -->
+<script src="script.js"></script>
 
 </body>
 
