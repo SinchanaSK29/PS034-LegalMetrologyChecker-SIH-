@@ -808,25 +808,20 @@ ${rawText}
             });
 
 
-        // Remove old checklist
-        const oldChecklist =
-            document.querySelector(
-                ".declaration-checklist"
-            );
+      // Remove old checklist
+const oldChecklist =
+    document.querySelector(".declaration-checklist");
 
-        if (oldChecklist) {
-            oldChecklist.remove();
-        }
+if (oldChecklist) {
+    oldChecklist.remove();
+}
 
 
-        // Add checklist after OCR section
-        const ocrContainer =
-            ocrText.parentElement;
-
-        ocrContainer.insertAdjacentHTML(
-            "afterend",
-            checklistResult.html
-        );
+// Add checklist directly below the OCR text
+ocrText.insertAdjacentHTML(
+    "afterend",
+    checklistResult.html
+);
 
 
         // ==================================================
