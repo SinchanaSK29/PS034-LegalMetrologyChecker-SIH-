@@ -112,7 +112,7 @@ function extractQuantity(text) {
 
     for (const line of lines) {
 
-        if (!/net\s*(?:quantity|qty)/i.test(line)) {
+        if (!/n[ae]t\s*(?:quantity|qty)/i.test(line)) { 
             continue;
         }
 
