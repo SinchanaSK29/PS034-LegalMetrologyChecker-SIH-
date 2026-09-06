@@ -768,8 +768,7 @@ async function analyzeProduct() {
         // ==================================================
         // STRUCTURED DECLARATION SUMMARY
         // ==================================================
-
-        const declarationSummary = `
+const declarationSummary = `
 STRUCTURED DECLARATION DATA
 
 Commodity: ${commodity}
@@ -787,18 +786,11 @@ Country of Origin: ${country}
 Manufacturing Date: ${manufacturingDate}
 
 Consumer Care: ${consumerCare}
+`;
 
+ocrText.textContent = declarationSummary;
+        
 
---------------------------------
-
-RAW OCR OUTPUT
-
-${rawText}
-        `;
-
-
-        ocrText.textContent =
-            declarationSummary;
 
 
         // ==================================================
