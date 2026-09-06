@@ -2,9 +2,9 @@ const imageInput = document.getElementById("productImage");
 const imagePreview = document.getElementById("imagePreview");
 
 
-// =====================================================
-// SHOW IMAGE PREVIEW
-// =====================================================
+// ======================================================
+// SHOW UPLOADED IMAGE
+// ======================================================
 
 imageInput.addEventListener("change", function () {
 
@@ -22,136 +22,54 @@ imageInput.addEventListener("change", function () {
 });
 
 
-// =====================================================
-// IMAGE PREPROCESSING
-// =====================================================
-
-function preprocessImage(file) {
-
-    return new Promise((resolve, reject) => {
-
-        const img = new Image();
-
-        img.onload = function () {
-
-            // Increase resolution
-            const scale = 2;
-
-            const canvas = document.createElement("canvas");
-
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-
-            const ctx = canvas.getContext("2d");
-
-            // Draw enlarged image
-            ctx.drawImage(
-                img,
-                0,
-                0,
-                canvas.width,
-                canvas.height
-            );
-
-            // Get pixels
-            const imageData = ctx.getImageData(
-                0,
-                0,
-                canvas.width,
-                canvas.height
-            );
-
-            const data = imageData.data;
-
-            // Grayscale + contrast enhancement
-            for (let i = 0; i < data.length; i += 4) {
-
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-
-                // Grayscale
-                let gray =
-                    0.299 * r +
-                    0.587 * g +
-                    0.114 * b;
-
-                // Increase contrast
-                gray = ((gray - 128) * 1.35) + 128;
-
-                gray = Math.max(0, Math.min(255, gray));
-
-                data[i] = gray;
-                data[i + 1] = gray;
-                data[i + 2] = gray;
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-
-            resolve(canvas);
-        };
-
-        img.onerror = reject;
-
-        img.src = URL.createObjectURL(file);
-    });
-}
-
-
-// =====================================================
+// ======================================================
 // NORMALIZE OCR TEXT
-// =====================================================
+// ======================================================
 
-function normalizeText(text) {
+function normalizeOCRText(text) {
 
     return text
         .replace(/\r/g, "")
         .replace(/[|]/g, "I")
         .replace(/[“”]/g, '"')
         .replace(/[‘’]/g, "'")
-        .replace(/\u00a0/g, " ")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
+        .replace(/[₹]/g, "Rs ")
+        .replace(/\s+/g, " ")
         .trim();
 }
 
 
-// =====================================================
-// FIND LINE AFTER LABEL
-// =====================================================
+// ======================================================
+// GET INDIVIDUAL LINES
+// ======================================================
 
-function findLabelValue(text, labels) {
+function getLines(text) {
 
-    const lines = text
+    return text
         .split("\n")
         .map(line => line.trim())
-        .filter(line => line.length > 0);
+        .filter(line => line.length > 1);
+}
 
-    for (let i = 0; i < lines.length; i++) {
 
-        const line = lines[i];
+// ======================================================
+// FIND LINE USING MULTIPLE OCR VARIATIONS
+// ======================================================
 
-        for (const label of labels) {
+function findMatchingLine(lines, patterns) {
 
-            const regex = new RegExp(
-                label + "\\s*[:\\-]?\\s*(.*)",
-                "i"
-            );
+    for (const line of lines) {
 
-            const match = line.match(regex);
+        const clean = line
+            .toLowerCase()
+            .replace(/[^a-z0-9₹.\-:/ ]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
 
-            if (match) {
+        for (const pattern of patterns) {
 
-                let value = match[1].trim();
-
-                // If value is empty, use next line
-                if (!value && lines[i + 1]) {
-                    value = lines[i + 1].trim();
-                }
-
-                if (value.length > 1) {
-                    return value;
-                }
+            if (clean.includes(pattern)) {
+                return line;
             }
         }
     }
@@ -160,49 +78,103 @@ function findLabelValue(text, labels) {
 }
 
 
-// =====================================================
-// PRODUCT / COMMODITY
-// =====================================================
+// ======================================================
+// EXTRACT MRP
+// ======================================================
 
-function detectProduct(text) {
+function extractMRP(text) {
 
-    let value = findLabelValue(text, [
-        "commodity",
-        "common name",
-        "product name"
-    ]);
+    const lines = getLines(text);
 
-    if (value) {
-        return cleanValue(value);
+    // Look specifically for lines containing MRP
+    const mrpKeywords = [
+        "maximum retail price",
+        "maximum retail",
+        "retail price",
+        "mrp",
+        "m.r.p"
+    ];
+
+    for (const line of lines) {
+
+        const lower = line
+            .toLowerCase()
+            .replace(/\s+/g, " ");
+
+        const containsMRP =
+            mrpKeywords.some(keyword =>
+                lower.includes(keyword)
+            );
+
+        if (!containsMRP) {
+            continue;
+        }
+
+        /*
+         * Look for a price after MRP wording.
+         *
+         * Examples:
+         * MRP ₹149.00
+         * MRP Rs.149.00
+         * Maximum Retail Price: 149.00
+         * Maximum Retail Price Rs 149.00
+         */
+
+        const priceMatches = line.match(
+            /(?:₹|rs\.?|inr)?\s*(\d{1,6}(?:[.,]\d{1,2})?)/gi
+        );
+
+        if (priceMatches && priceMatches.length > 0) {
+
+            // Take the LAST number on the MRP line.
+            // This avoids picking unrelated numbers before the price.
+            const lastMatch =
+                priceMatches[priceMatches.length - 1];
+
+            const numberMatch =
+                lastMatch.match(
+                    /\d{1,6}(?:[.,]\d{1,2})?/
+                );
+
+            if (numberMatch) {
+
+                let value =
+                    numberMatch[0].replace(",", ".");
+
+                return "₹" + value;
+            }
+        }
+    }
+
+
+    // Backup search across the whole OCR text
+    const backupMatch = text.match(
+        /(?:mrp|maximum\s+retail\s+price|retail\s+price)[^0-9]{0,30}(\d{1,6}(?:[.,]\d{1,2})?)/i
+    );
+
+    if (backupMatch) {
+
+        return "₹" +
+            backupMatch[1].replace(",", ".");
     }
 
     return "Not detected";
 }
 
 
-// =====================================================
-// NET QUANTITY
-// =====================================================
+// ======================================================
+// EXTRACT NET QUANTITY
+// ======================================================
 
-function detectQuantity(text) {
-
-    // Examples:
-    // 1U
-    // 1 U
-    // 500 g
-    // 250 ml
-    // 1 kg
-    // 2 L
+function extractQuantity(text) {
 
     const patterns = [
 
-        /net\s*quantity\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(u|unit|units|kg|g|mg|ml|l|litre|liter|nos?)/i,
+        /(?:net\s*(?:quantity|qty|wt|weight))[^0-9]{0,15}(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|mg|ml|l|ltr|litre|liter|units?|nos?))/i,
 
-        /net\s*quantity\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(u|unit|units)/i,
+        /(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|mg|ml|l|ltr|litre|liter))/i,
 
-        /(\d+(?:\.\d+)?)\s*(kg|g|mg|ml|l|litre|liter)\b/i,
-
-        /\b(\d+)\s*U\b/i
+        /(\d+\s*(?:u|units?|nos?))/i
     ];
 
     for (const pattern of patterns) {
@@ -210,25 +182,7 @@ function detectQuantity(text) {
         const match = text.match(pattern);
 
         if (match) {
-
-            let number = match[1];
-            let unit = match[2];
-
-            if (!unit) {
-                return number;
-            }
-
-            unit = unit.toUpperCase();
-
-            if (unit === "UNIT" || unit === "UNITS") {
-                unit = "U";
-            }
-
-            if (unit === "LITRE" || unit === "LITER") {
-                unit = "L";
-            }
-
-            return `${number} ${unit}`;
+            return match[1].trim();
         }
     }
 
@@ -236,33 +190,69 @@ function detectQuantity(text) {
 }
 
 
-// =====================================================
-// MRP
-// =====================================================
+// ======================================================
+// EXTRACT MANUFACTURER
+// ======================================================
 
-function detectMRP(text) {
+function extractManufacturer(text) {
 
-    const patterns = [
+    const lines = getLines(text);
 
-        // MRP ₹149
-        /(?:MRP|M\.R\.P\.?)\s*[:\-]?\s*[₹Rs\.]*\s*(\d+(?:\.\d{1,2})?)/i,
+    for (let i = 0; i < lines.length; i++) {
 
-        // Maximum Retail Price ₹149
-        /maximum\s*retail\s*price\s*[:\-]?\s*[₹Rs\.]*\s*(\d+(?:\.\d{1,2})?)/i,
+        const line = lines[i];
 
-        // Maximum Retail Price: T 149.00
-        /maximum\s*retail\s*price[^0-9]{0,15}(\d+(?:\.\d{1,2})?)/i,
+        const clean = line
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
 
-        // MRP ... 149
-        /\bMRP\b[^0-9]{0,20}(\d+(?:\.\d{1,2})?)/i
-    ];
+        if (
+            clean.includes("manufactured by") ||
+            clean.includes("manufacturedby") ||
+            clean.includes("mfd by") ||
+            clean.includes("mfg by") ||
+            clean.includes("manufacturer")
+        ) {
 
-    for (const pattern of patterns) {
+            let result = line;
 
-        const match = text.match(pattern);
+            // Remove the label itself
+            result = result.replace(
+                /manufactured\s*by\s*[:\-]?/i,
+                ""
+            );
 
-        if (match) {
-            return "₹" + parseFloat(match[1]).toFixed(2);
+            result = result.replace(
+                /mfd\.?\s*by\s*[:\-]?/i,
+                ""
+            );
+
+            result = result.replace(
+                /mfg\.?\s*by\s*[:\-]?/i,
+                ""
+            );
+
+            result = result.replace(
+                /manufacturer\s*[:\-]?/i,
+                ""
+            );
+
+            result = result.trim();
+
+            // If OCR put the company on the next line,
+            // add that line too.
+            if (
+                result.length < 8 &&
+                lines[i + 1]
+            ) {
+                result += " " + lines[i + 1];
+            }
+
+            if (result.length > 2) {
+                return result;
+            }
         }
     }
 
@@ -270,68 +260,86 @@ function detectMRP(text) {
 }
 
 
-// =====================================================
-// MANUFACTURER
-// =====================================================
+// ======================================================
+// EXTRACT MARKETED BY
+// ======================================================
 
-function detectManufacturer(text) {
+function extractMarketedBy(text) {
 
-    const value = findLabelValue(text, [
-        "manufactured by",
-        "manufactured",
-        "mfd by",
-        "manufacturer"
-    ]);
+    const lines = getLines(text);
 
-    if (value) {
+    for (let i = 0; i < lines.length; i++) {
 
-        return cleanCompanyName(value);
-    }
+        const line = lines[i];
 
-    return "Not detected";
-}
+        const clean = line
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
 
+        /*
+         * Handles:
+         *
+         * Marketed by
+         * Marketedby
+         * Marketed By:
+         * Marketed  by
+         */
 
-// =====================================================
-// MARKETER
-// =====================================================
+        if (
+            clean.includes("marketed by") ||
+            clean.includes("marketedby")
+        ) {
 
-function detectMarketer(text) {
+            let result = line;
 
-    const value = findLabelValue(text, [
-        "marketed by",
-        "marketed"
-    ]);
+            result = result.replace(
+                /marketed\s*by\s*[:\-]?/i,
+                ""
+            );
 
-    if (value) {
-        return cleanCompanyName(value);
-    }
+            result = result.trim();
 
-    return "Not detected";
-}
+            if (
+                result.length < 5 &&
+                lines[i + 1]
+            ) {
+                result += " " + lines[i + 1];
+            }
 
-
-// =====================================================
-// COUNTRY OF ORIGIN
-// =====================================================
-
-function detectCountry(text) {
-
-    const value = findLabelValue(text, [
-        "country of origin",
-        "country"
-    ]);
-
-    if (value) {
-
-        if (/india/i.test(value)) {
-            return "INDIA";
+            if (result.length > 2) {
+                return result;
+            }
         }
-
-        return cleanValue(value);
     }
 
-    // Search anywhere in OCR
+    return "Not detected";
+}
+
+
+// ======================================================
+// EXTRACT COUNTRY OF ORIGIN
+// ======================================================
+
+function extractCountry(text) {
+
+    const match = text.match(
+        /country\s+of\s+origin\s*[:\-]?\s*([A-Za-z ]+)/i
+    );
+
+    if (match) {
+
+        return match[1]
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    // Common OCR-friendly fallback
+    if (/\bmade\s+in\s+india\b/i.test(text)) {
+        return "INDIA";
+    }
+
     if (/\bindia\b/i.test(text)) {
         return "INDIA";
     }
@@ -340,21 +348,21 @@ function detectCountry(text) {
 }
 
 
-// =====================================================
-// MANUFACTURING DATE
-// =====================================================
+// ======================================================
+// EXTRACT MANUFACTURING DATE
+// ======================================================
 
-function detectManufacturingDate(text) {
+function extractManufacturingDate(text) {
 
     const patterns = [
 
-        /month\s*(?:&|and)?\s*year\s*of\s*mfg\.?\s*[:\-]?\s*(\d{1,2}[\/\-]\d{4})/i,
+        /month\s*(?:and|&)?\s*year\s*(?:of)?\s*mfg[^0-9]*(\d{1,2}[\/\-]\d{4})/i,
 
-        /month\s*(?:&|and)?\s*year\s*of\s*manufactur[a-z]*\s*[:\-]?\s*(\d{1,2}[\/\-]\d{4})/i,
+        /month\s*(?:and|&)?\s*year\s*(?:of)?\s*manufactur[^0-9]*(\d{1,2}[\/\-]\d{4})/i,
 
-        /(?:mfg|manufacturing|manufactured|packed)\s*(?:date)?\s*[:\-]?\s*(\d{1,2}[\/\-]\d{4})/i,
+        /mfg[^0-9]*(\d{1,2}[\/\-]\d{4})/i,
 
-        /\b(\d{1,2}[\/\-]\d{4})\b/
+        /manufactur[^0-9]*(\d{1,2}[\/\-]\d{4})/i
     ];
 
     for (const pattern of patterns) {
@@ -370,31 +378,85 @@ function detectManufacturingDate(text) {
 }
 
 
-// =====================================================
-// CONSUMER CARE
-// =====================================================
+// ======================================================
+// EXTRACT CONSUMER CARE
+// ======================================================
 
-function detectConsumerCare(text) {
+function extractConsumerCare(text) {
+
+    const lower = text.toLowerCase();
+
+    const keywords = [
+        "consumer care",
+        "customer care",
+        "consumer complaints",
+        "customer complaints",
+        "toll free",
+        "helpline",
+        "contact us",
+        "email",
+        "@"
+    ];
+
+    for (const keyword of keywords) {
+
+        if (lower.includes(keyword)) {
+            return "Detected";
+        }
+    }
+
+    // Phone number fallback
+    const phoneMatch =
+        text.match(/\b\d{3,5}[\s\-]?\d{5,8}\b/);
+
+    if (phoneMatch) {
+        return "Detected";
+    }
+
+    return "Not detected";
+}
+
+
+// ======================================================
+// EXTRACT COMMON / COMMODITY NAME
+// ======================================================
+
+function extractCommodity(text) {
 
     const patterns = [
 
-        /consumer\s*care/i,
+        /commodity\s*[:\-]\s*(.+)/i,
 
-        /customer\s*care/i,
+        /common\s+name\s*[:\-]\s*(.+)/i,
 
-        /toll\s*free/i,
-
-        /\b1[0-9]{9}\b/,
-
-        /\b1800[\s\-]?\d{3}[\s\-]?\d{4}\b/i,
-
-        /@[a-z0-9.-]+\.[a-z]{2,}/i
+        /generic\s+name\s*[:\-]\s*(.+)/i
     ];
 
     for (const pattern of patterns) {
 
-        if (pattern.test(text)) {
-            return "Detected";
+        const match = text.match(pattern);
+
+        if (match) {
+            return match[1].trim();
+        }
+    }
+
+    // Fallback: first meaningful line
+    const lines = getLines(text);
+
+    for (const line of lines) {
+
+        const clean = line
+            .replace(/[^A-Za-z0-9 ]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        if (
+            clean.length >= 3 &&
+            clean.length <= 60 &&
+            !/^(www|http|fsc|bis|iso|barcode)/i.test(clean)
+        ) {
+            return clean;
         }
     }
 
@@ -402,65 +464,160 @@ function detectConsumerCare(text) {
 }
 
 
-// =====================================================
-// CLEAN VALUES
-// =====================================================
+// ======================================================
+// CREATE CHECKLIST
+// ======================================================
 
-function cleanValue(value) {
+function createChecklist(data) {
 
-    return value
-        .replace(/[|]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .substring(0, 150);
-}
+    const checklist = [
+
+        {
+            name: "Commodity / Common Name",
+            value: data.commodity,
+            mandatory: true
+        },
+
+        {
+            name: "Net Quantity",
+            value: data.quantity,
+            mandatory: true
+        },
+
+        {
+            name: "Maximum Retail Price (MRP)",
+            value: data.mrp,
+            mandatory: true
+        },
+
+        {
+            name: "Manufacturer / Packer / Importer",
+            value: data.manufacturer,
+            mandatory: true
+        },
+
+        {
+            name: "Marketed By",
+            value: data.marketedBy,
+            mandatory: false
+        },
+
+        {
+            name: "Country of Origin",
+            value: data.country,
+            mandatory: false
+        },
+
+        {
+            name: "Month & Year of Manufacture",
+            value: data.manufacturingDate,
+            mandatory: true
+        },
+
+        {
+            name: "Consumer Care Details",
+            value: data.consumerCare,
+            mandatory: true
+        }
+    ];
 
 
-function cleanCompanyName(value) {
+    let html = `
+        <div class="declaration-checklist"
+             style="
+                margin-top:25px;
+                padding:22px;
+                border:1px solid #ddd;
+                border-radius:14px;
+                background:white;
+             ">
 
-    return value
-        .replace(/[|]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .substring(0, 150);
-}
-
-
-// =====================================================
-// CREATE CLEAN DECLARATION SUMMARY
-// =====================================================
-
-function createDeclarationSummary(data) {
-
-    return `
-        <strong>Detected Declaration Summary</strong>
-        <br><br>
-
-        Commodity: ${data.product}
-        <br>
-        Net Quantity: ${data.quantity}
-        <br>
-        MRP: ${data.mrp}
-        <br>
-        Manufactured by: ${data.manufacturer}
-        <br>
-        Marketed by: ${data.marketer}
-        <br>
-        Country of Origin: ${data.country}
-        <br>
-        Manufacturing Date: ${data.manufacturingDate}
-        <br>
-        Consumer Care: ${data.consumerCare}
-        <br><br>
-
-        <strong>Raw OCR text is used internally for analysis.</strong>
+            <h3 style="margin-top:0;">
+                Declaration Checklist
+            </h3>
     `;
+
+
+    let missingMandatory = [];
+
+
+    checklist.forEach(item => {
+
+        const detected =
+            item.value &&
+            item.value !== "Not detected";
+
+        let statusText;
+        let statusColor;
+
+        if (detected) {
+
+            statusText = "✓ Detected";
+            statusColor = "#138a4b";
+
+        } else if (!item.mandatory) {
+
+            statusText = "— Not assessed";
+            statusColor = "#777";
+
+        } else {
+
+            statusText = "✗ Not Detected";
+            statusColor = "#d93025";
+
+            missingMandatory.push(item.name);
+        }
+
+
+        html += `
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                padding:12px 0;
+                border-bottom:1px solid #eee;
+                gap:20px;
+            ">
+
+                <span>${item.name}</span>
+
+                <span style="
+                    color:${statusColor};
+                    font-weight:600;
+                    white-space:nowrap;
+                ">
+                    ${statusText}
+                </span>
+
+            </div>
+        `;
+    });
+
+
+    html += `
+            <p style="
+                margin-top:18px;
+                color:#666;
+                font-size:14px;
+            ">
+                Screening result only. Human verification is recommended
+                before taking regulatory action.
+            </p>
+
+        </div>
+    `;
+
+
+    return {
+        html,
+        missingMandatory
+    };
 }
 
 
-// =====================================================
+// ======================================================
 // ANALYZE PRODUCT
-// =====================================================
+// ======================================================
 
 async function analyzeProduct() {
 
@@ -469,13 +626,11 @@ async function analyzeProduct() {
     if (!file) {
 
         alert("Please upload a product image first.");
-
         return;
     }
 
 
-    // Get result elements
-
+    // Existing HTML elements
     const productName =
         document.getElementById("productName");
 
@@ -499,24 +654,22 @@ async function analyzeProduct() {
 
 
     // Processing message
-
     complianceStatus.textContent =
         "Analyzing product...";
 
     complianceMessage.textContent =
-        "Enhancing image and extracting package declarations...";
+        "OCR is reading the product label. Please wait.";
 
     productName.textContent = "Scanning...";
     netQuantity.textContent = "Scanning...";
     mrp.textContent = "Scanning...";
     manufacturer.textContent = "Scanning...";
 
-    ocrText.innerHTML =
-        "Analyzing product label...";
+    ocrText.textContent =
+        "OCR is processing the image...";
 
 
-    document
-        .getElementById("resultSection")
+    document.getElementById("resultSection")
         .scrollIntoView({
             behavior: "smooth"
         });
@@ -524,173 +677,191 @@ async function analyzeProduct() {
 
     try {
 
-        // =============================================
-        // PREPROCESS IMAGE
-        // =============================================
-
-        const processedImage =
-            await preprocessImage(file);
-
-
-        // =============================================
-        // OCR WORKER
-        // =============================================
-
+        // Create OCR worker
         const worker =
             await Tesseract.createWorker("eng");
 
 
-        // Page segmentation mode 6:
-        // Assume a uniform block of text
-
+        // Use a label-friendly page segmentation mode
         await worker.setParameters({
             tessedit_pageseg_mode: "6"
         });
 
 
-        // =============================================
-        // RUN OCR
-        // =============================================
-
+        // Perform OCR
         const result =
-            await worker.recognize(processedImage);
+            await worker.recognize(file);
 
 
-        let text =
+        const rawText =
             result.data.text || "";
 
 
-        text = normalizeText(text);
+        // Show raw OCR
+        ocrText.textContent =
+            rawText || "No text detected.";
 
 
-        console.log("OCR RESULT:");
-        console.log(text);
+        // Normalize for extraction
+        const normalizedText =
+            normalizeOCRText(rawText);
 
 
-        // =============================================
-        // EXTRACT INFORMATION
-        // =============================================
+        // ==================================================
+        // EXTRACT DECLARATIONS
+        // ==================================================
 
-        const data = {
+        const commodity =
+            extractCommodity(rawText);
 
-            product:
-                detectProduct(text),
+        const quantity =
+            extractQuantity(rawText);
 
-            quantity:
-                detectQuantity(text),
+        const detectedMRP =
+            extractMRP(rawText);
 
-            mrp:
-                detectMRP(text),
+        const detectedManufacturer =
+            extractManufacturer(rawText);
 
-            manufacturer:
-                detectManufacturer(text),
+        const marketedBy =
+            extractMarketedBy(rawText);
 
-            marketer:
-                detectMarketer(text),
+        const country =
+            extractCountry(rawText);
 
-            country:
-                detectCountry(text),
+        const manufacturingDate =
+            extractManufacturingDate(rawText);
 
-            manufacturingDate:
-                detectManufacturingDate(text),
-
-            consumerCare:
-                detectConsumerCare(text)
-        };
+        const consumerCare =
+            extractConsumerCare(rawText);
 
 
-        console.log("DETECTED DATA:");
-        console.log(data);
-
-
-        // =============================================
-        // SHOW MAIN RESULTS
-        // =============================================
+        // ==================================================
+        // UPDATE MAIN CARDS
+        // ==================================================
 
         productName.textContent =
-            data.product;
+            commodity;
 
         netQuantity.textContent =
-            data.quantity;
+            quantity;
 
         mrp.textContent =
-            data.mrp;
+            detectedMRP;
 
         manufacturer.textContent =
-            data.manufacturer;
+            detectedManufacturer;
 
 
-        // =============================================
-        // SHOW CLEAN SUMMARY
-        // =============================================
+        // ==================================================
+        // STRUCTURED DECLARATION SUMMARY
+        // ==================================================
 
-        ocrText.innerHTML =
-            createDeclarationSummary(data);
+        const declarationSummary = `
 
+STRUCTURED DECLARATION DATA
 
-        // =============================================
-        // COMPLIANCE CHECK
-        // =============================================
+Commodity: ${commodity}
 
-        let detectedCount = 0;
+Net Quantity: ${quantity}
 
-        if (data.product !== "Not detected")
-            detectedCount++;
+MRP: ${detectedMRP}
 
-        if (data.quantity !== "Not detected")
-            detectedCount++;
+Manufacturer: ${detectedManufacturer}
 
-        if (data.mrp !== "Not detected")
-            detectedCount++;
+Marketed By: ${marketedBy}
 
-        if (data.manufacturer !== "Not detected")
-            detectedCount++;
+Country of Origin: ${country}
 
-        if (data.marketer !== "Not detected")
-            detectedCount++;
+Manufacturing Date: ${manufacturingDate}
 
-        if (data.country !== "Not detected")
-            detectedCount++;
-
-        if (data.manufacturingDate !== "Not detected")
-            detectedCount++;
-
-        if (data.consumerCare !== "Not detected")
-            detectedCount++;
+Consumer Care: ${consumerCare}
 
 
-        // =============================================
-        // FINAL STATUS
-        // =============================================
+--------------------------------
 
-        if (detectedCount >= 6) {
+RAW OCR OUTPUT
+
+${rawText}
+        `;
+
+
+        ocrText.textContent =
+            declarationSummary;
+
+
+        // ==================================================
+        // CREATE CHECKLIST
+        // ==================================================
+
+        const checklistResult =
+            createChecklist({
+
+                commodity,
+                quantity,
+                mrp: detectedMRP,
+                manufacturer: detectedManufacturer,
+                marketedBy,
+                country,
+                manufacturingDate,
+                consumerCare
+            });
+
+
+        // Remove old checklist
+        const oldChecklist =
+            document.querySelector(
+                ".declaration-checklist"
+            );
+
+        if (oldChecklist) {
+            oldChecklist.remove();
+        }
+
+
+        // Add checklist after OCR section
+        const ocrContainer =
+            ocrText.parentElement;
+
+        ocrContainer.insertAdjacentHTML(
+            "afterend",
+            checklistResult.html
+        );
+
+
+        // ==================================================
+        // COMPLIANCE RESULT
+        // ==================================================
+
+        const missing =
+            checklistResult.missingMandatory;
+
+
+        if (missing.length === 0) {
 
             complianceStatus.textContent =
                 "Potentially Compliant";
 
             complianceMessage.textContent =
-                `${detectedCount} key declarations were detected from the package label. Human verification is recommended.`;
+                "All key declarations in the screening checklist were detected. Human verification is recommended.";
 
-        }
-
-        else {
+        } else {
 
             complianceStatus.textContent =
                 "Potential Non-Compliance";
 
             complianceMessage.textContent =
-                `${detectedCount} key declarations were detected. Some declarations could not be detected by OCR. Human verification is recommended.`;
+                "The following mandatory declaration(s) could not be detected: " +
+                missing.join(", ") +
+                ". Human verification is recommended.";
         }
 
 
-        // Stop OCR
-
+        // Stop worker
         await worker.terminate();
 
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         console.error(error);
 
@@ -698,7 +869,7 @@ async function analyzeProduct() {
             "Analysis Failed";
 
         complianceMessage.textContent =
-            "The image could not be processed. Please upload a clear, well-lit product label.";
+            "OCR could not process this image. Please try a clearer product label image.";
 
         ocrText.textContent =
             "OCR error: " + error.message;
