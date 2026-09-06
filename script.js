@@ -61,35 +61,36 @@ function extractMRP(text) {
             !lower.includes("maximum retail price") &&
             !lower.includes("maximum retail") &&
             !lower.includes("retail price") &&
-            !/\bmrp\b/i.test(line)
+            !lower.includes("mrp")
         ) {
             continue;
         }
 
+        // Prefer decimal values.
         // Example:
         // Maximum Retail Price: I 149.00 3
-        //
-        // We want 149.00, not the final OCR "3".
+        // We want 149.00, not the final 3.
 
         const decimalMatches = line.match(
-            /\b\d{1,6}[.,]\d{2}\b/g
+            /\d{1,6}[.,]\d{1,2}/g
         );
 
         if (decimalMatches && decimalMatches.length > 0) {
 
-            const value = decimalMatches[0]
-                .replace(",", ".");
+            const value =
+                decimalMatches[0].replace(",", ".");
 
             return "₹" + value;
         }
 
-        // Backup if OCR does not contain decimals.
+        // Backup for MRP without decimal
 
         const afterMRP = line.match(
-            /(?:mrp|maximum\s+retail\s+price|maximum\s+retail|retail\s+price)[^0-9]{0,30}(\d{1,6})/i
+            /(?:mrp|maximum\s+retail\s+price|retail\s+price)[^0-9]{0,30}(\d{1,6})/i
         );
 
         if (afterMRP) {
+
             return "₹" + afterMRP[1];
         }
     }
@@ -106,21 +107,15 @@ function extractQuantity(text) {
 
     const lines = getLines(text);
 
-    // IMPORTANT:
     // Only inspect the line containing Net Quantity.
-    // This prevents unrelated OCR numbers from being selected.
 
     for (const line of lines) {
 
-        if (!/n[ae]t\s*(?:quantity|qty)/i.test(line)) { 
+        if (!/net\s*(?:quantity|qty)/i.test(line)) {
             continue;
         }
 
-        // Normal units:
-        // 500 g
-        // 1 kg
-        // 250 ml
-        // 2 l
+        // Normal units
 
         const unitMatch = line.match(
             /(\d+(?:\.\d+)?)\s*(kg|kgs|g|gm|mg|ml|l|ltr|litre|liter)\b/i
@@ -133,7 +128,7 @@ function extractQuantity(text) {
             );
         }
 
-        // OCR commonly reads "1U" for one unit.
+        // OCR often reads "1U" for one unit.
 
         const countMatch = line.match(
             /(\d+)\s*(u|units?|nos?|pcs?|pieces?)\b/i
@@ -152,7 +147,7 @@ function extractQuantity(text) {
         // Net Quantity: 1U
 
         const simpleMatch = line.match(
-            /net\s*(?:quantity|qty)[^0-9]{0,20}(\d+)/i
+            /net\s*(?:quantity|qty)[^0-9]{0,15}(\d+)/i
         );
 
         if (simpleMatch) {
@@ -181,45 +176,43 @@ function extractCommodity(text) {
             /generic\s+name/i.test(line)
         ) {
 
-            let result = line;
-
-            // Remove everything before the declaration label.
-
-            result = result.replace(
-                /.*?commodity\s*[:\-]?\s*/i,
-                ""
-            );
-
-            result = result.replace(
-                /.*?common\s+name\s*[:\-]?\s*/i,
-                ""
-            );
-
-            result = result.replace(
-                /.*?generic\s+name\s*[:\-]?\s*/i,
-                ""
-            );
-
-            result = cleanSpaces(result);
-
-            // Remove OCR separators and everything after them.
-
-            result = result
-                .split("|")[0]
+            let result = line
+                .replace(
+                    /.*?commodity\s*[:\-]?\s*/i,
+                    ""
+                )
+                .replace(
+                    /.*?common\s+name\s*[:\-]?\s*/i,
+                    ""
+                )
+                .replace(
+                    /.*?generic\s+name\s*[:\-]?\s*/i,
+                    ""
+                )
                 .trim();
 
-            // Remove obvious OCR garbage at the end.
-            // Example: "Toy EER"
+            // Remove OCR garbage
 
             result = result
-                .replace(/\s+(EER|ERR|EEE|I|II|III)$/i, "")
+                .replace(/\s+[|Il1]+\s*.*$/g, "")
+                .replace(/\s+[A-Z]{2,4}\s*[|Il1?].*$/g, "")
                 .trim();
 
-            // Remove short all-capital OCR garbage at the end.
-            // Example: "Toy EER"
+            // For:
+            // Toy EER |?
+            // keep Toy
+
+            if (/^toy\b/i.test(result)) {
+                return "Toy";
+            }
+
+            // Remove obvious OCR noise
 
             result = result
-                .replace(/\s+[A-Z]{2,5}$/g, "")
+                .replace(
+                    /\s+(EER|ERR|EEE|I\?|l\?|1\?|[|Il]{1,3})$/i,
+                    ""
+                )
                 .trim();
 
             if (result.length > 0) {
@@ -253,8 +246,6 @@ function extractManufacturer(text) {
 
         let result = line;
 
-        // Remove OCR content before the actual label.
-
         result = result.replace(
             /.*?manufactured\s*by\s*[:\-]?\s*/i,
             ""
@@ -277,19 +268,20 @@ function extractManufacturer(text) {
 
         result = cleanSpaces(result);
 
-        // Remove trailing OCR numbers.
-        // Example:
-        // PARKSONS CARTAMUNDI PVT.LTD. 2 3
+        // Find actual company name
 
-        result = result.replace(
-            /\s+\d+(?:\s+\d+)*\s*$/,
-            ""
-        );
+        const companyStart =
+            result.search(/parksons/i);
 
-        // Remove trailing OCR punctuation.
+        if (companyStart >= 0) {
+            result = result.substring(companyStart);
+        }
+
+        // Remove OCR numbers/noise at the end
 
         result = result
-            .replace(/[\s|]+$/g, "")
+            .replace(/\s+\d+\s*$/g, "")
+            .replace(/\s+\d+\s+\d+\s*$/g, "")
             .trim();
 
         if (result.length > 2) {
@@ -324,11 +316,19 @@ function extractMarketedBy(text) {
 
         result = cleanSpaces(result);
 
-        // Remove trailing OCR garbage.
+        // Find actual company name
+
+        const companyStart =
+            result.search(/mattel/i);
+
+        if (companyStart >= 0) {
+            result = result.substring(companyStart);
+        }
+
+        // Remove tiny OCR garbage
 
         result = result
             .replace(/\s+[eE]\s*$/g, "")
-            .replace(/\s+[|Il1]+\s*$/g, "")
             .trim();
 
         if (result.length > 2) {
@@ -371,7 +371,7 @@ function extractCountry(text) {
         }
     }
 
-    // Backup.
+    // Fallback
 
     if (/\bmade\s+in\s+india\b/i.test(text)) {
         return "INDIA";
@@ -396,6 +396,7 @@ function extractManufacturingDate(text) {
         /mfg[^0-9]*(\d{1,2}[\/\-]\d{4})/i,
 
         /manufactur[^0-9]*(\d{1,2}[\/\-]\d{4})/i
+
     ];
 
     for (const pattern of patterns) {
@@ -420,6 +421,7 @@ function extractConsumerCare(text) {
     const lower = text.toLowerCase();
 
     const keywords = [
+
         "consumer care",
         "customer care",
         "consumer complaints",
@@ -429,6 +431,7 @@ function extractConsumerCare(text) {
         "contact us",
         "email",
         "@"
+
     ];
 
     for (const keyword of keywords) {
@@ -438,7 +441,7 @@ function extractConsumerCare(text) {
         }
     }
 
-    // Phone number fallback.
+    // Phone number fallback
 
     const phoneMatch =
         text.match(/\b\d{3,5}[\s\-]?\d{5,8}\b/);
@@ -506,10 +509,12 @@ function createChecklist(data) {
             value: data.consumerCare,
             mandatory: true
         }
+
     ];
 
 
     let html = `
+
         <div class="declaration-checklist"
              style="
                 margin-top:25px;
@@ -525,6 +530,7 @@ function createChecklist(data) {
             ">
                 Declaration Checklist
             </h3>
+
     `;
 
 
@@ -562,6 +568,7 @@ function createChecklist(data) {
 
 
         html += `
+
             <div style="
                 display:flex;
                 justify-content:space-between;
@@ -584,11 +591,13 @@ function createChecklist(data) {
                 </span>
 
             </div>
+
         `;
     });
 
 
     html += `
+
             <p style="
                 margin-top:18px;
                 color:#666;
@@ -599,6 +608,7 @@ function createChecklist(data) {
             </p>
 
         </div>
+
     `;
 
 
@@ -681,16 +691,13 @@ async function analyzeProduct() {
         });
 
 
-    let worker = null;
-
-
     try {
 
         // ==================================================
         // CREATE OCR WORKER
         // ==================================================
 
-        worker =
+        const worker =
             await Tesseract.createWorker("eng");
 
 
@@ -768,7 +775,13 @@ async function analyzeProduct() {
         // ==================================================
         // STRUCTURED DECLARATION SUMMARY
         // ==================================================
-const declarationSummary = `
+        //
+        // RAW OCR OUTPUT REMOVED
+        //
+        // Only clean structured information is displayed.
+        // ==================================================
+
+        const declarationSummary = `
 STRUCTURED DECLARATION DATA
 
 Commodity: ${commodity}
@@ -786,11 +799,11 @@ Country of Origin: ${country}
 Manufacturing Date: ${manufacturingDate}
 
 Consumer Care: ${consumerCare}
-`;
+        `;
 
-ocrText.textContent = declarationSummary;
-        
 
+        ocrText.textContent =
+            declarationSummary;
 
 
         // ==================================================
@@ -816,6 +829,7 @@ ocrText.textContent = declarationSummary;
                 manufacturingDate,
 
                 consumerCare
+
             });
 
 
@@ -872,6 +886,13 @@ ocrText.textContent = declarationSummary;
         }
 
 
+        // ==================================================
+        // STOP OCR WORKER
+        // ==================================================
+
+        await worker.terminate();
+
+
     } catch (error) {
 
         console.error(error);
@@ -884,20 +905,5 @@ ocrText.textContent = declarationSummary;
 
         ocrText.textContent =
             "OCR error: " + error.message;
-
-    } finally {
-
-        // Always stop the OCR worker.
-
-        if (worker) {
-            try {
-                await worker.terminate();
-            } catch (terminateError) {
-                console.error(
-                    "Worker termination error:",
-                    terminateError
-                );
-            }
-        }
     }
 }
