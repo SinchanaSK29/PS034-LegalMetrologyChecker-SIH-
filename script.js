@@ -61,42 +61,35 @@ function extractMRP(text) {
             !lower.includes("maximum retail price") &&
             !lower.includes("maximum retail") &&
             !lower.includes("retail price") &&
-            !lower.includes("mrp")
+            !/\bmrp\b/i.test(line)
         ) {
             continue;
         }
 
-        /*
-         * Prefer numbers having decimal values.
-         *
-         * Example OCR:
-         * Maximum Retail Price: I 149.00 3
-         *
-         * We want 149.00, NOT the final stray 3.
-         */
+        // Example:
+        // Maximum Retail Price: I 149.00 3
+        //
+        // We want 149.00, not the final OCR "3".
 
         const decimalMatches = line.match(
-            /\d{1,6}[.,]\d{1,2}/g
+            /\b\d{1,6}[.,]\d{2}\b/g
         );
 
         if (decimalMatches && decimalMatches.length > 0) {
 
-            const value =
-                decimalMatches[0].replace(",", ".");
+            const value = decimalMatches[0]
+                .replace(",", ".");
 
             return "₹" + value;
         }
 
-        /*
-         * Backup for MRP without decimal.
-         */
+        // Backup if OCR does not contain decimals.
 
         const afterMRP = line.match(
-            /(?:mrp|maximum\s+retail\s+price|retail\s+price)[^0-9]{0,30}(\d{1,6})/i
+            /(?:mrp|maximum\s+retail\s+price|maximum\s+retail|retail\s+price)[^0-9]{0,30}(\d{1,6})/i
         );
 
         if (afterMRP) {
-
             return "₹" + afterMRP[1];
         }
     }
@@ -113,10 +106,9 @@ function extractQuantity(text) {
 
     const lines = getLines(text);
 
-    /*
-     * FIRST: only inspect the line containing
-     * "Net Quantity".
-     */
+    // IMPORTANT:
+    // Only inspect the line containing Net Quantity.
+    // This prevents unrelated OCR numbers from being selected.
 
     for (const line of lines) {
 
@@ -124,10 +116,11 @@ function extractQuantity(text) {
             continue;
         }
 
-        /*
-         * Normal units:
-         * kg, g, mg, ml, l, litre, liter
-         */
+        // Normal units:
+        // 500 g
+        // 1 kg
+        // 250 ml
+        // 2 l
 
         const unitMatch = line.match(
             /(\d+(?:\.\d+)?)\s*(kg|kgs|g|gm|mg|ml|l|ltr|litre|liter)\b/i
@@ -140,9 +133,7 @@ function extractQuantity(text) {
             );
         }
 
-        /*
-         * OCR often reads "1U" for one unit.
-         */
+        // OCR commonly reads "1U" for one unit.
 
         const countMatch = line.match(
             /(\d+)\s*(u|units?|nos?|pcs?|pieces?)\b/i
@@ -157,13 +148,11 @@ function extractQuantity(text) {
             );
         }
 
-        /*
-         * Very OCR-friendly fallback:
-         * Net Quantity: 1U
-         */
+        // Very OCR-friendly fallback:
+        // Net Quantity: 1U
 
         const simpleMatch = line.match(
-            /net\s*(?:quantity|qty)[^0-9]{0,15}(\d+)/i
+            /net\s*(?:quantity|qty)[^0-9]{0,20}(\d+)/i
         );
 
         if (simpleMatch) {
@@ -192,54 +181,45 @@ function extractCommodity(text) {
             /generic\s+name/i.test(line)
         ) {
 
-            let result = line
-                .replace(
-                    /.*?commodity\s*[:\-]?\s*/i,
-                    ""
-                )
-                .replace(
-                    /.*?common\s+name\s*[:\-]?\s*/i,
-                    ""
-                )
-                .replace(
-                    /.*?generic\s+name\s*[:\-]?\s*/i,
-                    ""
-                )
-                .trim();
+            let result = line;
 
-            /*
-             * Remove common OCR garbage after the
-             * actual commodity.
-             *
-             * Example:
-             * Toy EER |?
-             */
+            // Remove everything before the declaration label.
 
-            result = result
-                .replace(/\s+[|Il1]+\s*.*$/g, "")
-                .replace(/\s+[A-Z]{2,4}\s*[|Il1?].*$/g, "")
-                .trim();
+            result = result.replace(
+                /.*?commodity\s*[:\-]?\s*/i,
+                ""
+            );
 
-            /*
-             * For the common OCR result:
-             * Toy EER |?
-             *
-             * Keep the meaningful first word.
-             */
+            result = result.replace(
+                /.*?common\s+name\s*[:\-]?\s*/i,
+                ""
+            );
 
-            if (/^toy\b/i.test(result)) {
-                return "Toy";
-            }
+            result = result.replace(
+                /.*?generic\s+name\s*[:\-]?\s*/i,
+                ""
+            );
 
-            /*
-             * Remove obvious OCR noise from the end.
-             */
+            result = cleanSpaces(result);
+
+            // Remove OCR separators and everything after them.
 
             result = result
-                .replace(
-                    /\s+(EER|ERR|EEE|I\?|l\?|1\?|[|Il]{1,3})$/i,
-                    ""
-                )
+                .split("|")[0]
+                .trim();
+
+            // Remove obvious OCR garbage at the end.
+            // Example: "Toy EER"
+
+            result = result
+                .replace(/\s+(EER|ERR|EEE|I|II|III)$/i, "")
+                .trim();
+
+            // Remove short all-capital OCR garbage at the end.
+            // Example: "Toy EER"
+
+            result = result
+                .replace(/\s+[A-Z]{2,5}$/g, "")
                 .trim();
 
             if (result.length > 0) {
@@ -273,6 +253,8 @@ function extractManufacturer(text) {
 
         let result = line;
 
+        // Remove OCR content before the actual label.
+
         result = result.replace(
             /.*?manufactured\s*by\s*[:\-]?\s*/i,
             ""
@@ -295,30 +277,22 @@ function extractManufacturer(text) {
 
         result = cleanSpaces(result);
 
-        /*
-         * OCR may put random characters before PARKSONS.
-         * Find the actual company name.
-         */
+        // Remove trailing OCR numbers.
+        // Example:
+        // PARKSONS CARTAMUNDI PVT.LTD. 2 3
 
-        const companyStart =
-            result.search(/parksons/i);
+        result = result.replace(
+            /\s+\d+(?:\s+\d+)*\s*$/,
+            ""
+        );
 
-        if (companyStart >= 0) {
-
-            result = result.substring(companyStart);
-        }
-
-        /*
-         * Remove obvious trailing OCR numbers/noise.
-         */
+        // Remove trailing OCR punctuation.
 
         result = result
-            .replace(/\s+\d+\s*$/g, "")
-            .replace(/\s+\d+\s+\d+\s*$/g, "")
+            .replace(/[\s|]+$/g, "")
             .trim();
 
         if (result.length > 2) {
-
             return result;
         }
     }
@@ -350,28 +324,14 @@ function extractMarketedBy(text) {
 
         result = cleanSpaces(result);
 
-        /*
-         * OCR may put random characters before MATTEL.
-         */
-
-        const companyStart =
-            result.search(/mattel/i);
-
-        if (companyStart >= 0) {
-
-            result = result.substring(companyStart);
-        }
-
-        /*
-         * Remove tiny OCR garbage at the end.
-         */
+        // Remove trailing OCR garbage.
 
         result = result
             .replace(/\s+[eE]\s*$/g, "")
+            .replace(/\s+[|Il1]+\s*$/g, "")
             .trim();
 
         if (result.length > 2) {
-
             return result;
         }
     }
@@ -401,13 +361,6 @@ function extractCountry(text) {
                 .replace(/\s+/g, " ")
                 .trim();
 
-            /*
-             * For this label OCR may contain:
-             * INDIA 8 5
-             *
-             * We only need the country.
-             */
-
             if (/india/i.test(result)) {
                 return "INDIA";
             }
@@ -418,9 +371,7 @@ function extractCountry(text) {
         }
     }
 
-    /*
-     * Fallback.
-     */
+    // Backup.
 
     if (/\bmade\s+in\s+india\b/i.test(text)) {
         return "INDIA";
@@ -487,9 +438,7 @@ function extractConsumerCare(text) {
         }
     }
 
-    /*
-     * Phone number fallback.
-     */
+    // Phone number fallback.
 
     const phoneMatch =
         text.match(/\b\d{3,5}[\s\-]?\d{5,8}\b/);
@@ -732,13 +681,16 @@ async function analyzeProduct() {
         });
 
 
+    let worker = null;
+
+
     try {
 
         // ==================================================
         // CREATE OCR WORKER
         // ==================================================
 
-        const worker =
+        worker =
             await Tesseract.createWorker("eng");
 
 
@@ -928,13 +880,6 @@ ${rawText}
         }
 
 
-        // ==================================================
-        // STOP OCR WORKER
-        // ==================================================
-
-        await worker.terminate();
-
-
     } catch (error) {
 
         console.error(error);
@@ -947,5 +892,20 @@ ${rawText}
 
         ocrText.textContent =
             "OCR error: " + error.message;
+
+    } finally {
+
+        // Always stop the OCR worker.
+
+        if (worker) {
+            try {
+                await worker.terminate();
+            } catch (terminateError) {
+                console.error(
+                    "Worker termination error:",
+                    terminateError
+                );
+            }
+        }
     }
 }
