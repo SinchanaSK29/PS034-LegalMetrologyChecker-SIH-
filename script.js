@@ -3,7 +3,7 @@ const imagePreview = document.getElementById("imagePreview");
 
 // ======================================================
 // SHOW UPLOADED IMAGE
-// ======================================================
+// =====================================================
 
 imageInput.addEventListener("change", function () {
 
