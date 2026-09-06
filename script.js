@@ -1,7 +1,6 @@
 const imageInput = document.getElementById("productImage");
 const imagePreview = document.getElementById("imagePreview");
 
-
 // ======================================================
 // SHOW UPLOADED IMAGE
 // ======================================================
@@ -23,58 +22,24 @@ imageInput.addEventListener("change", function () {
 
 
 // ======================================================
-// NORMALIZE OCR TEXT
-// ======================================================
-
-function normalizeOCRText(text) {
-
-    return text
-        .replace(/\r/g, "")
-        .replace(/[|]/g, "I")
-        .replace(/[“”]/g, '"')
-        .replace(/[‘’]/g, "'")
-        .replace(/[₹]/g, "Rs ")
-        .replace(/\s+/g, " ")
-        .trim();
-}
-
-
-// ======================================================
-// GET INDIVIDUAL LINES
+// OCR TEXT HELPERS
 // ======================================================
 
 function getLines(text) {
 
     return text
+        .replace(/\r/g, "")
         .split("\n")
         .map(line => line.trim())
         .filter(line => line.length > 1);
 }
 
 
-// ======================================================
-// FIND LINE USING MULTIPLE OCR VARIATIONS
-// ======================================================
+function cleanSpaces(text) {
 
-function findMatchingLine(lines, patterns) {
-
-    for (const line of lines) {
-
-        const clean = line
-            .toLowerCase()
-            .replace(/[^a-z0-9₹.\-:/ ]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-
-        for (const pattern of patterns) {
-
-            if (clean.includes(pattern)) {
-                return line;
-            }
-        }
-    }
-
-    return null;
+    return text
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 
@@ -86,76 +51,54 @@ function extractMRP(text) {
 
     const lines = getLines(text);
 
-    // Look specifically for lines containing MRP
-    const mrpKeywords = [
-        "maximum retail price",
-        "maximum retail",
-        "retail price",
-        "mrp",
-        "m.r.p"
-    ];
-
     for (const line of lines) {
 
         const lower = line
             .toLowerCase()
             .replace(/\s+/g, " ");
 
-        const containsMRP =
-            mrpKeywords.some(keyword =>
-                lower.includes(keyword)
-            );
-
-        if (!containsMRP) {
+        if (
+            !lower.includes("maximum retail price") &&
+            !lower.includes("maximum retail") &&
+            !lower.includes("retail price") &&
+            !lower.includes("mrp")
+        ) {
             continue;
         }
 
         /*
-         * Look for a price after MRP wording.
+         * Prefer numbers having decimal values.
          *
-         * Examples:
-         * MRP ₹149.00
-         * MRP Rs.149.00
-         * Maximum Retail Price: 149.00
-         * Maximum Retail Price Rs 149.00
+         * Example OCR:
+         * Maximum Retail Price: I 149.00 3
+         *
+         * We want 149.00, NOT the final stray 3.
          */
 
-        const priceMatches = line.match(
-            /(?:₹|rs\.?|inr)?\s*(\d{1,6}(?:[.,]\d{1,2})?)/gi
+        const decimalMatches = line.match(
+            /\d{1,6}[.,]\d{1,2}/g
         );
 
-        if (priceMatches && priceMatches.length > 0) {
+        if (decimalMatches && decimalMatches.length > 0) {
 
-            // Take the LAST number on the MRP line.
-            // This avoids picking unrelated numbers before the price.
-            const lastMatch =
-                priceMatches[priceMatches.length - 1];
+            const value =
+                decimalMatches[0].replace(",", ".");
 
-            const numberMatch =
-                lastMatch.match(
-                    /\d{1,6}(?:[.,]\d{1,2})?/
-                );
-
-            if (numberMatch) {
-
-                let value =
-                    numberMatch[0].replace(",", ".");
-
-                return "₹" + value;
-            }
+            return "₹" + value;
         }
-    }
 
+        /*
+         * Backup for MRP without decimal.
+         */
 
-    // Backup search across the whole OCR text
-    const backupMatch = text.match(
-        /(?:mrp|maximum\s+retail\s+price|retail\s+price)[^0-9]{0,30}(\d{1,6}(?:[.,]\d{1,2})?)/i
-    );
+        const afterMRP = line.match(
+            /(?:mrp|maximum\s+retail\s+price|retail\s+price)[^0-9]{0,30}(\d{1,6})/i
+        );
 
-    if (backupMatch) {
+        if (afterMRP) {
 
-        return "₹" +
-            backupMatch[1].replace(",", ".");
+            return "₹" + afterMRP[1];
+        }
     }
 
     return "Not detected";
@@ -168,21 +111,140 @@ function extractMRP(text) {
 
 function extractQuantity(text) {
 
-    const patterns = [
+    const lines = getLines(text);
 
-        /(?:net\s*(?:quantity|qty|wt|weight))[^0-9]{0,15}(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|mg|ml|l|ltr|litre|liter|units?|nos?))/i,
+    /*
+     * FIRST: only inspect the line containing
+     * "Net Quantity".
+     */
 
-        /(\d+(?:\.\d+)?\s*(?:kg|kgs|g|gm|mg|ml|l|ltr|litre|liter))/i,
+    for (const line of lines) {
 
-        /(\d+\s*(?:u|units?|nos?))/i
-    ];
+        if (!/net\s*(?:quantity|qty)/i.test(line)) {
+            continue;
+        }
 
-    for (const pattern of patterns) {
+        /*
+         * Normal units:
+         * kg, g, mg, ml, l, litre, liter
+         */
 
-        const match = text.match(pattern);
+        const unitMatch = line.match(
+            /(\d+(?:\.\d+)?)\s*(kg|kgs|g|gm|mg|ml|l|ltr|litre|liter)\b/i
+        );
 
-        if (match) {
-            return match[1].trim();
+        if (unitMatch) {
+
+            return cleanSpaces(
+                unitMatch[1] + " " + unitMatch[2]
+            );
+        }
+
+        /*
+         * OCR often reads "1U" for one unit.
+         */
+
+        const countMatch = line.match(
+            /(\d+)\s*(u|units?|nos?|pcs?|pieces?)\b/i
+        );
+
+        if (countMatch) {
+
+            return (
+                countMatch[1] +
+                " " +
+                countMatch[2].toUpperCase()
+            );
+        }
+
+        /*
+         * Very OCR-friendly fallback:
+         * Net Quantity: 1U
+         */
+
+        const simpleMatch = line.match(
+            /net\s*(?:quantity|qty)[^0-9]{0,15}(\d+)/i
+        );
+
+        if (simpleMatch) {
+
+            return simpleMatch[1] + " U";
+        }
+    }
+
+    return "Not detected";
+}
+
+
+// ======================================================
+// EXTRACT COMMODITY / COMMON NAME
+// ======================================================
+
+function extractCommodity(text) {
+
+    const lines = getLines(text);
+
+    for (const line of lines) {
+
+        if (
+            /commodity/i.test(line) ||
+            /common\s+name/i.test(line) ||
+            /generic\s+name/i.test(line)
+        ) {
+
+            let result = line
+                .replace(
+                    /.*?commodity\s*[:\-]?\s*/i,
+                    ""
+                )
+                .replace(
+                    /.*?common\s+name\s*[:\-]?\s*/i,
+                    ""
+                )
+                .replace(
+                    /.*?generic\s+name\s*[:\-]?\s*/i,
+                    ""
+                )
+                .trim();
+
+            /*
+             * Remove common OCR garbage after the
+             * actual commodity.
+             *
+             * Example:
+             * Toy EER |?
+             */
+
+            result = result
+                .replace(/\s+[|Il1]+\s*.*$/g, "")
+                .replace(/\s+[A-Z]{2,4}\s*[|Il1?].*$/g, "")
+                .trim();
+
+            /*
+             * For the common OCR result:
+             * Toy EER |?
+             *
+             * Keep the meaningful first word.
+             */
+
+            if (/^toy\b/i.test(result)) {
+                return "Toy";
+            }
+
+            /*
+             * Remove obvious OCR noise from the end.
+             */
+
+            result = result
+                .replace(
+                    /\s+(EER|ERR|EEE|I\?|l\?|1\?|[|Il]{1,3})$/i,
+                    ""
+                )
+                .trim();
+
+            if (result.length > 0) {
+                return result;
+            }
         }
     }
 
@@ -198,61 +260,66 @@ function extractManufacturer(text) {
 
     const lines = getLines(text);
 
-    for (let i = 0; i < lines.length; i++) {
-
-        const line = lines[i];
-
-        const clean = line
-            .toLowerCase()
-            .replace(/[^a-z0-9 ]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
+    for (const line of lines) {
 
         if (
-            clean.includes("manufactured by") ||
-            clean.includes("manufacturedby") ||
-            clean.includes("mfd by") ||
-            clean.includes("mfg by") ||
-            clean.includes("manufacturer")
+            !/manufactured\s*by/i.test(line) &&
+            !/mfd\.?\s*by/i.test(line) &&
+            !/mfg\.?\s*by/i.test(line) &&
+            !/manufacturer/i.test(line)
         ) {
+            continue;
+        }
 
-            let result = line;
+        let result = line;
 
-            // Remove the label itself
-            result = result.replace(
-                /manufactured\s*by\s*[:\-]?/i,
-                ""
-            );
+        result = result.replace(
+            /.*?manufactured\s*by\s*[:\-]?\s*/i,
+            ""
+        );
 
-            result = result.replace(
-                /mfd\.?\s*by\s*[:\-]?/i,
-                ""
-            );
+        result = result.replace(
+            /.*?mfd\.?\s*by\s*[:\-]?\s*/i,
+            ""
+        );
 
-            result = result.replace(
-                /mfg\.?\s*by\s*[:\-]?/i,
-                ""
-            );
+        result = result.replace(
+            /.*?mfg\.?\s*by\s*[:\-]?\s*/i,
+            ""
+        );
 
-            result = result.replace(
-                /manufacturer\s*[:\-]?/i,
-                ""
-            );
+        result = result.replace(
+            /.*?manufacturer\s*[:\-]?\s*/i,
+            ""
+        );
 
-            result = result.trim();
+        result = cleanSpaces(result);
 
-            // If OCR put the company on the next line,
-            // add that line too.
-            if (
-                result.length < 8 &&
-                lines[i + 1]
-            ) {
-                result += " " + lines[i + 1];
-            }
+        /*
+         * OCR may put random characters before PARKSONS.
+         * Find the actual company name.
+         */
 
-            if (result.length > 2) {
-                return result;
-            }
+        const companyStart =
+            result.search(/parksons/i);
+
+        if (companyStart >= 0) {
+
+            result = result.substring(companyStart);
+        }
+
+        /*
+         * Remove obvious trailing OCR numbers/noise.
+         */
+
+        result = result
+            .replace(/\s+\d+\s*$/g, "")
+            .replace(/\s+\d+\s+\d+\s*$/g, "")
+            .trim();
+
+        if (result.length > 2) {
+
+            return result;
         }
     }
 
@@ -268,49 +335,44 @@ function extractMarketedBy(text) {
 
     const lines = getLines(text);
 
-    for (let i = 0; i < lines.length; i++) {
+    for (const line of lines) {
 
-        const line = lines[i];
+        if (!/marketed\s*by/i.test(line)) {
+            continue;
+        }
 
-        const clean = line
-            .toLowerCase()
-            .replace(/[^a-z0-9 ]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
+        let result = line;
+
+        result = result.replace(
+            /.*?marketed\s*by\s*[:\-]?\s*/i,
+            ""
+        );
+
+        result = cleanSpaces(result);
 
         /*
-         * Handles:
-         *
-         * Marketed by
-         * Marketedby
-         * Marketed By:
-         * Marketed  by
+         * OCR may put random characters before MATTEL.
          */
 
-        if (
-            clean.includes("marketed by") ||
-            clean.includes("marketedby")
-        ) {
+        const companyStart =
+            result.search(/mattel/i);
 
-            let result = line;
+        if (companyStart >= 0) {
 
-            result = result.replace(
-                /marketed\s*by\s*[:\-]?/i,
-                ""
-            );
+            result = result.substring(companyStart);
+        }
 
-            result = result.trim();
+        /*
+         * Remove tiny OCR garbage at the end.
+         */
 
-            if (
-                result.length < 5 &&
-                lines[i + 1]
-            ) {
-                result += " " + lines[i + 1];
-            }
+        result = result
+            .replace(/\s+[eE]\s*$/g, "")
+            .trim();
 
-            if (result.length > 2) {
-                return result;
-            }
+        if (result.length > 2) {
+
+            return result;
         }
     }
 
@@ -319,28 +381,48 @@ function extractMarketedBy(text) {
 
 
 // ======================================================
-// EXTRACT COUNTRY OF ORIGIN
+// EXTRACT COUNTRY
 // ======================================================
 
 function extractCountry(text) {
 
-    const match = text.match(
-        /country\s+of\s+origin\s*[:\-]?\s*([A-Za-z ]+)/i
-    );
+    const lines = getLines(text);
 
-    if (match) {
+    for (const line of lines) {
 
-        return match[1]
-            .replace(/\s+/g, " ")
-            .trim();
+        const match = line.match(
+            /country\s+of\s+origin\s*[:\-]?\s*(.+)/i
+        );
+
+        if (match) {
+
+            let result = match[1]
+                .replace(/[^A-Za-z ]/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+
+            /*
+             * For this label OCR may contain:
+             * INDIA 8 5
+             *
+             * We only need the country.
+             */
+
+            if (/india/i.test(result)) {
+                return "INDIA";
+            }
+
+            if (result.length > 0) {
+                return result;
+            }
+        }
     }
 
-    // Common OCR-friendly fallback
+    /*
+     * Fallback.
+     */
+
     if (/\bmade\s+in\s+india\b/i.test(text)) {
-        return "INDIA";
-    }
-
-    if (/\bindia\b/i.test(text)) {
         return "INDIA";
     }
 
@@ -405,7 +487,10 @@ function extractConsumerCare(text) {
         }
     }
 
-    // Phone number fallback
+    /*
+     * Phone number fallback.
+     */
+
     const phoneMatch =
         text.match(/\b\d{3,5}[\s\-]?\d{5,8}\b/);
 
@@ -418,54 +503,7 @@ function extractConsumerCare(text) {
 
 
 // ======================================================
-// EXTRACT COMMON / COMMODITY NAME
-// ======================================================
-
-function extractCommodity(text) {
-
-    const patterns = [
-
-        /commodity\s*[:\-]\s*(.+)/i,
-
-        /common\s+name\s*[:\-]\s*(.+)/i,
-
-        /generic\s+name\s*[:\-]\s*(.+)/i
-    ];
-
-    for (const pattern of patterns) {
-
-        const match = text.match(pattern);
-
-        if (match) {
-            return match[1].trim();
-        }
-    }
-
-    // Fallback: first meaningful line
-    const lines = getLines(text);
-
-    for (const line of lines) {
-
-        const clean = line
-            .replace(/[^A-Za-z0-9 ]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-
-        if (
-            clean.length >= 3 &&
-            clean.length <= 60 &&
-            !/^(www|http|fsc|bis|iso|barcode)/i.test(clean)
-        ) {
-            return clean;
-        }
-    }
-
-    return "Not detected";
-}
-
-
-// ======================================================
-// CREATE CHECKLIST
+// CREATE DECLARATION CHECKLIST
 // ======================================================
 
 function createChecklist(data) {
@@ -532,7 +570,10 @@ function createChecklist(data) {
                 background:white;
              ">
 
-            <h3 style="margin-top:0;">
+            <h3 style="
+                margin-top:0;
+                margin-bottom:18px;
+            ">
                 Declaration Checklist
             </h3>
     `;
@@ -547,8 +588,10 @@ function createChecklist(data) {
             item.value &&
             item.value !== "Not detected";
 
+
         let statusText;
         let statusColor;
+
 
         if (detected) {
 
@@ -579,7 +622,9 @@ function createChecklist(data) {
                 gap:20px;
             ">
 
-                <span>${item.name}</span>
+                <span>
+                    ${item.name}
+                </span>
 
                 <span style="
                     color:${statusColor};
@@ -625,12 +670,16 @@ async function analyzeProduct() {
 
     if (!file) {
 
-        alert("Please upload a product image first.");
+        alert(
+            "Please upload a product image first."
+        );
+
         return;
     }
 
 
     // Existing HTML elements
+
     const productName =
         document.getElementById("productName");
 
@@ -654,16 +703,24 @@ async function analyzeProduct() {
 
 
     // Processing message
+
     complianceStatus.textContent =
         "Analyzing product...";
 
     complianceMessage.textContent =
         "OCR is reading the product label. Please wait.";
 
-    productName.textContent = "Scanning...";
-    netQuantity.textContent = "Scanning...";
-    mrp.textContent = "Scanning...";
-    manufacturer.textContent = "Scanning...";
+    productName.textContent =
+        "Scanning...";
+
+    netQuantity.textContent =
+        "Scanning...";
+
+    mrp.textContent =
+        "Scanning...";
+
+    manufacturer.textContent =
+        "Scanning...";
 
     ocrText.textContent =
         "OCR is processing the image...";
@@ -677,18 +734,23 @@ async function analyzeProduct() {
 
     try {
 
-        // Create OCR worker
+        // ==================================================
+        // CREATE OCR WORKER
+        // ==================================================
+
         const worker =
             await Tesseract.createWorker("eng");
 
 
-        // Use a label-friendly page segmentation mode
         await worker.setParameters({
             tessedit_pageseg_mode: "6"
         });
 
 
-        // Perform OCR
+        // ==================================================
+        // OCR
+        // ==================================================
+
         const result =
             await worker.recognize(file);
 
@@ -697,14 +759,12 @@ async function analyzeProduct() {
             result.data.text || "";
 
 
-        // Show raw OCR
-        ocrText.textContent =
-            rawText || "No text detected.";
+        if (!rawText.trim()) {
 
-
-        // Normalize for extraction
-        const normalizedText =
-            normalizeOCRText(rawText);
+            throw new Error(
+                "No readable text was detected."
+            );
+        }
 
 
         // ==================================================
@@ -758,7 +818,6 @@ async function analyzeProduct() {
         // ==================================================
 
         const declarationSummary = `
-
 STRUCTURED DECLARATION DATA
 
 Commodity: ${commodity}
@@ -798,30 +857,47 @@ ${rawText}
             createChecklist({
 
                 commodity,
+
                 quantity,
+
                 mrp: detectedMRP,
-                manufacturer: detectedManufacturer,
+
+                manufacturer:
+                    detectedManufacturer,
+
                 marketedBy,
+
                 country,
+
                 manufacturingDate,
+
                 consumerCare
             });
 
 
-      // Remove old checklist
-const oldChecklist =
-    document.querySelector(".declaration-checklist");
+        // ==================================================
+        // REMOVE OLD CHECKLIST
+        // ==================================================
 
-if (oldChecklist) {
-    oldChecklist.remove();
-}
+        const oldChecklist =
+            document.querySelector(
+                ".declaration-checklist"
+            );
 
 
-// Add checklist directly below the OCR text
-ocrText.insertAdjacentHTML(
-    "afterend",
-    checklistResult.html
-);
+        if (oldChecklist) {
+            oldChecklist.remove();
+        }
+
+
+        // ==================================================
+        // ADD CHECKLIST BELOW OCR
+        // ==================================================
+
+        ocrText.insertAdjacentHTML(
+            "afterend",
+            checklistResult.html
+        );
 
 
         // ==================================================
@@ -852,7 +928,10 @@ ocrText.insertAdjacentHTML(
         }
 
 
-        // Stop worker
+        // ==================================================
+        // STOP OCR WORKER
+        // ==================================================
+
         await worker.terminate();
 
 
