@@ -1,24 +1,24 @@
-MetroLens 🔎
+###MetroLens 🔎
 
 AI-Assisted Packaged Commodity Compliance Screening
 
 **Smart India Hackathon 2026 – PS034**
 
 MetroLens is a **prototype demo** that demonstrates how packaged commodity labels can be scanned from an image and checked for important compliance-related information.
-
- 👥 Team
+---
+### 👥 Team
  
  Team MAASK
 
 A student team developing a prototype solution for **Smart India Hackathon 2026 – PS034**.
 
 Team Members:
-- [Member 1]
-- [Member 2]
-- [Member 3]
-- [Member 4]
-- [Member 5]
-- [Member 6]
+- Mohak Gupta
+- Anurag Kumar
+- Swati Kumari
+- Sinchana S K
+- Anshul Kumar
+- Saket Kumar
 
 ---
 
@@ -55,7 +55,7 @@ The goal is to make the initial screening process simpler and easier to understa
 
 ---
 
- ✨ Current Features
+ ##✨ Current Features
 
  📷 Product Label Scanning
 Allows the user to upload a packaged commodity label image.
@@ -82,7 +82,7 @@ Provides a simple status and message based on the detected information.
 
 ---
 
- 🛠️ Technology Stack
+## 🛠️ Technology Stack
 
 - **HTML** – Web page structure
 - **CSS** – User interface and styling
@@ -92,7 +92,7 @@ Provides a simple status and message based on the detected information.
 
 ---
 
-🔄 How It Works
+##🔄 How It Works
 
 Product Label Image
         ↓
