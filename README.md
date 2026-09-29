@@ -107,3 +107,15 @@ Important Information Detection
 Compliance Checklist
         ↓
 Compliance Status
+
+
+## 📸 Project Screenshots
+
+### 1. Home Page
+![MetroLens Home Page](screenshots/home.png)
+
+### 2. Product Label Scanning
+![Product Scanning](screenshots/scanning.png)
+
+### 3. Compliance Results
+![Compliance Results](screenshots/results.png)
